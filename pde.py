@@ -140,7 +140,7 @@ class NeuralNet(nn.Module):
         return valueFunction        
         
         
-    def train(self, feedDict, lrs, iterations, useTestData):
+    def train(self, feedDict, lrs, iterations, useTestData, verbose=False):
         ''' Training function.
         '''
         gamma = feedDict['gamma']
@@ -220,10 +220,11 @@ class NeuralNet(nn.Module):
 
 
                 # print logs
-                if epochTotal % 10 == 0:
-                    print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
-                        epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
-                        )
+                if (epochTotal % 100 == 0):
+                    if verbose:
+                        print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
+                            epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
+                            )
                         )
 
                     mse = torch.tensor(0.).to(self.device)
@@ -280,7 +281,7 @@ class HamiltonJacobiBellman(ABC):
         self.correctShift = correctShift
 
 
-    def train(self, interiorPointCount, dataPointCount, lrs, iterations, useTestData=False):
+    def train(self, interiorPointCount, dataPointCount, lrs, iterations, useTestData=False, verbose=False):
         ''' Generate data and train.
         '''
 
@@ -342,7 +343,7 @@ class HamiltonJacobiBellman(ABC):
                 'dataSampler': self.dataSampler
             }
         
-        lossValues = self.network.train(feedDict, lrs, iterations, useTestData)
+        lossValues = self.network.train(feedDict, lrs, iterations, useTestData, verbose)
 
         return lossValues
 
