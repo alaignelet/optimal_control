@@ -99,10 +99,17 @@ class NeuralNet(nn.Module):
         return grad
             
             
-    def computeValueFunctionDerivative(self, x):
-        valueFunction = self.computeValueFunction(x)
+    def computeValueFunctionDerivative(self, x, psd=False):
+        if psd:
+            valueFunction = self.computeValueFunctionPsd(x)
+        else:
+            valueFunction = self.computeValueFunction(x)
         return self.partialDerivative( tensorToDerive=valueFunction, x=x)
-            
+
+
+    def computeValueFunctionPsd(self, x):
+        return self._matrixEvaluatedPsd(x)
+
 
     def computeValueFunction(self, x):
         if self.quadraticForm:
@@ -117,6 +124,38 @@ class NeuralNet(nn.Module):
         '''
         return self.model(x)
     
+    def _get_near_psd_torch(self, A):
+        C = (A + A.T)/2
+        eigval, eigvec = torch.linalg.eigh(C)
+        eigval[eigval < 0] = 0
+
+        return eigvec @ torch.diag(eigval) @ eigvec.T
+
+    def _matrixEvaluatedPsd(self, x):
+        ''' The output of the network is the symetric matrix P.
+        '''        
+        
+        dim = x.shape[1]
+
+        # the below is SUPER fast
+        stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
+        outputModel = self.model(x)
+
+        inds = np.triu_indices( dim )
+        k = 0
+        for i, j in zip( inds[0], inds[1] ):
+            stackedMatrices[:, i, j] = outputModel[:, k]
+            stackedMatrices[:, j, i] = outputModel[:, k]
+            k += 1
+
+        stackedMatricesPsd = torch.zeros_like( stackedMatrices )
+        for i, mat in enumerate(stackedMatrices):
+            stackedMatricesPsd[i] = self._get_near_psd_torch(mat)
+
+        valueFunction = 0.5 * torch.einsum('ni, nij, nj -> n', x, stackedMatricesPsd, x).reshape(-1, 1).to(self.device)
+
+        return valueFunction  
+
     
     def _matrixEvaluated(self, x):
         ''' The output of the network is the symetric matrix P.
