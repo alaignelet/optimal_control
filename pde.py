@@ -5,6 +5,7 @@ import numpy as np
 import time
 from abc import ABC, abstractmethod
 from scipy.special import expit, logit
+from scipy.stats import ortho_group
 
 def stackWeights(network):
     weights = np.array([])
@@ -58,7 +59,7 @@ class NeuralNet(nn.Module):
         Glorot initialisation.
     '''
 
-    def __init__(self, layers, quadraticForm=False, useAdditionalModel=False, positiveSolution=False):
+    def __init__(self, layers, quadraticForm=False, useAdditionalModel=False, positiveSolution=False, imposePsd=False):
         super(NeuralNet, self).__init__()
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.layers = layers
@@ -67,6 +68,8 @@ class NeuralNet(nn.Module):
         self.useAdditionalModel = useAdditionalModel
         if self.useAdditionalModel:
             self.additionalModel = self._buildModel(layers=[ layers[0], 20, layers[0] ], positiveSolution=False).to(self.device)
+        self.orthogonalMatrix = torch.tensor( ortho_group.rvs(layers[-1]) ).float()
+        self.imposePsd = imposePsd
 
             
     def _buildLayers(self, layers, positiveSolution):
@@ -99,23 +102,22 @@ class NeuralNet(nn.Module):
         return grad
             
             
-    def computeValueFunctionDerivative(self, x, psd=False):
-        if psd:
-            valueFunction = self.computeValueFunctionPsd(x)
-        else:
-            valueFunction = self.computeValueFunction(x)
+    def computeValueFunctionDerivative(self, x):
+        valueFunction = self.computeValueFunction(x)
         return self.partialDerivative( tensorToDerive=valueFunction, x=x)
-
-
-    def computeValueFunctionPsd(self, x):
-        return self._matrixEvaluatedPsd(x)
 
 
     def computeValueFunction(self, x):
         if self.quadraticForm:
+            print('Quadratic form')
             return self._matrixEvaluated(x)
-            
-        else:        
+
+        elif self.imposePsd:
+            print('Impose PSD')
+            return self._matrixEvaluatedPsd(x)
+
+        else:
+            print('Direct evaluation')
             return self._directValueFunction(x)
         
     
@@ -131,26 +133,22 @@ class NeuralNet(nn.Module):
 
         return eigvec @ torch.diag(eigval) @ eigvec.T
 
+
     def _matrixEvaluatedPsd(self, x):
         ''' The output of the network is the symetric matrix P.
-        '''        
-        
+        '''
+
         dim = x.shape[1]
 
-        # the below is SUPER fast
+         # the below is SUPER fast
         stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
         outputModel = self.model(x)
+        outputModel = torch.exp(outputModel)
 
-        inds = np.triu_indices( dim )
-        k = 0
-        for i, j in zip( inds[0], inds[1] ):
-            stackedMatrices[:, i, j] = outputModel[:, k]
-            stackedMatrices[:, j, i] = outputModel[:, k]
-            k += 1
+        for i in range( dim ):
+            stackedMatrices[:, i, i] = outputModel[:, i]
 
-        stackedMatricesPsd = torch.zeros_like( stackedMatrices )
-        for i, mat in enumerate(stackedMatrices):
-            stackedMatricesPsd[i] = self._get_near_psd_torch(mat)
+        stackedMatricesPsd = self.orthogonalMatrix @ stackedMatrices @ self.orthogonalMatrix.T
 
         valueFunction = 0.5 * torch.einsum('ni, nij, nj -> n', x, stackedMatricesPsd, x).reshape(-1, 1).to(self.device)
 
