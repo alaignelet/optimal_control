@@ -59,32 +59,36 @@ class NeuralNet(nn.Module):
         Glorot initialisation.
     '''
 
-    def __init__(self, layers, quadraticForm=False, useAdditionalModel=False, positiveSolution=False, imposePsd=False):
+    def __init__(self, layers, quadraticForm=False, useAdditionalModel=False, imposePsd=False, imposeCholesky=False, **parameters):
         super(NeuralNet, self).__init__()
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.layers = layers
-        self.model = self._buildModel(layers, positiveSolution).to(self.device)
+        self.model = self._buildModel(layers, imposePsd).to(self.device)
         self.quadraticForm = quadraticForm
         self.useAdditionalModel = useAdditionalModel
         if self.useAdditionalModel:
-            self.additionalModel = self._buildModel(layers=[ layers[0], 20, layers[0] ], positiveSolution=False).to(self.device)
-        self.orthogonalMatrix = torch.tensor( ortho_group.rvs(layers[-1]) ).float()
+            self.additionalModel = self._buildModel(layers=[ layers[0], 20, layers[0] ], imposePsd=False).to(self.device)
+        #np.random.seed(0)
         self.imposePsd = imposePsd
-
+        if self.imposePsd:
+            self.countMatrices = parameters.get('countMatrices', 1)
+            # self.orthogonalMatrix = [torch.tensor( ortho_group.rvs(layers[0]) ).float() for i in range(self.countMatrices)]
+            self.orthogonalMatrix = [ torch.tensor( [[-1, -1], [-1, 1]]).float()  / np.sqrt(2) ]
+        self.imposeCholesky = imposeCholesky
             
-    def _buildLayers(self, layers, positiveSolution):
+    def _buildLayers(self, layers, imposePsd):
         neuralNetLayers = []
         for i in range(len(layers) - 2):
             neuralNetLayers.append(nn.Linear(in_features=layers[i], out_features=layers[i + 1]))
             neuralNetLayers.append( nn.Sigmoid() )
         neuralNetLayers.append(nn.Linear(in_features=layers[-2], out_features=layers[-1]))
-        if positiveSolution:
-            neuralNetLayers.append( nn.ReLU() )     
+        if imposePsd:
+            neuralNetLayers.append( nn.Softplus() )     
         return neuralNetLayers
          
         
-    def _buildModel(self, layers, positiveSolution):
-        neuralNetLayers = self._buildLayers(layers, positiveSolution)
+    def _buildModel(self, layers, imposePsd):
+        neuralNetLayers = self._buildLayers(layers, imposePsd)
         neuralNetModel = nn.Sequential( *neuralNetLayers )
         neuralNetModel = neuralNetModel.apply(self._normalInit)
         return neuralNetModel
@@ -109,15 +113,15 @@ class NeuralNet(nn.Module):
 
     def computeValueFunction(self, x):
         if self.quadraticForm:
-            print('Quadratic form')
             return self._matrixEvaluated(x)
 
         elif self.imposePsd:
-            print('Impose PSD')
             return self._matrixEvaluatedPsd(x)
 
+        elif self.imposeCholesky:
+            return self._choleskyEvaluated(x)
+
         else:
-            print('Direct evaluation')
             return self._directValueFunction(x)
         
     
@@ -126,31 +130,54 @@ class NeuralNet(nn.Module):
         '''
         return self.model(x)
     
-    def _get_near_psd_torch(self, A):
-        C = (A + A.T)/2
-        eigval, eigvec = torch.linalg.eigh(C)
-        eigval[eigval < 0] = 0
 
-        return eigvec @ torch.diag(eigval) @ eigvec.T
+    def _choleskyEvaluated(self, x):
+        ''' The output of the network is the symetric matrix P.
+        '''        
+        
+        dim = x.shape[1]
 
+        # the below is SUPER fast
+        stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
+        outputModel = self.model(x)
+
+        inds = np.triu_indices( dim, k=1 )
+        k = 0
+        for i, j in zip( inds[0], inds[1] ):
+            stackedMatrices[:, i, j] = outputModel[:, k]
+            k += 1
+
+        # we need the diagonal terms to be positive
+        for i in range(dim):
+            stackedMatrices[:, i, i] = torch.exp( outputModel[:, k] )
+            k += 1
+
+        stackedP = torch.einsum( 'nji, njk -> nik', stackedMatrices, stackedMatrices)
+
+        valueFunction = 0.5 * torch.einsum('ni, nij, nj -> n', x, stackedP, x).reshape(-1, 1).to(self.device)
+
+        return valueFunction  
 
     def _matrixEvaluatedPsd(self, x):
-        ''' The output of the network is the symetric matrix P.
+        ''' The output of the network is the eigenvalues of PSD matrix P.
         '''
 
         dim = x.shape[1]
 
-         # the below is SUPER fast
+        # the below is SUPER fast
         stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
         outputModel = self.model(x)
-        outputModel = torch.exp(outputModel)
 
-        for i in range( dim ):
-            stackedMatrices[:, i, i] = outputModel[:, i]
+        valueFunction = 0
+        for idx, Q in zip( [i*dim for i in range(self.countMatrices)], self.orthogonalMatrix):
+            stackedMatrices = torch.zeros((x.shape[0], dim, dim))
+            
+            for i in range(dim):
+                stackedMatrices[:, i, i] = outputModel[:, idx + i]
 
-        stackedMatricesPsd = self.orthogonalMatrix @ stackedMatrices @ self.orthogonalMatrix.T
+            stackedMatricesPsd = Q @ stackedMatrices @ Q.T
 
-        valueFunction = 0.5 * torch.einsum('ni, nij, nj -> n', x, stackedMatricesPsd, x).reshape(-1, 1).to(self.device)
+            valueFunction += 0.5 * torch.einsum('ni, nij, nj -> n', x, stackedMatricesPsd, x).reshape(-1, 1)
 
         return valueFunction  
 
@@ -216,7 +243,7 @@ class NeuralNet(nn.Module):
                 additionalOptimizer = torch.optim.Adam(params=self.additionalModel.parameters(), lr=lr)
             
             for epoch in range(iteration):
-                xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
+                # xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
 
                 # compute model dependent quantities
                 if gamma['matrix'] > 0:
@@ -276,7 +303,7 @@ class NeuralNet(nn.Module):
                         print('lossDataTest: %.2e'%lossDataTest.detach().cpu().numpy().item())
                         mse = lossDataTest
 
-                        #if  gamma['gradient'] > 0.:
+                        # if  gamma['gradient'] > 0.:
                         gradDataTest = self.computeValueFunctionDerivative(xDataTest)
                         lossGradientTest = torch.mean( (gradDataTest.double() - gradTrueTest.double())**2 ).float().to(self.device)
                         print('lossGradientTest: %.2e'%lossGradientTest.detach().cpu().numpy().item())
@@ -521,15 +548,18 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         productValueFunctionDerivative = torch.einsum('ij, nj -> ni', P, x).to(self.device)
         return productValueFunctionDerivative
     
+
     def dataMatrixFunction(self, x):
         alpha1 = 1./5 * ( 1 + np.sqrt(6) )
         P = alpha1 * torch.eye(n=self.dim)
         inds = np.triu_indices(self.dim)
         return P[inds].repeat(x.shape[0], 1)
 
+
     def getDataPoints(self, dataPointCount):
         sampledPoints = self.dataSampler.samplePoints(dataPointCount)
         return sampledPoints
+
 
     def groundTruthSolution(self, xEvaluation):
         groundTruth = self.dataValueFunction(xEvaluation).reshape(-1, 1)
@@ -562,6 +592,8 @@ class LinearQuadraticRegulatorND(LinearQuadraticRegulator):
 
     
 
+
+
 class NonLinear(HamiltonJacobiBellman):
     ''' The problem is:
         y' = Ay + Bu
@@ -575,17 +607,18 @@ class NonLinear(HamiltonJacobiBellman):
 
         R is not a parameter, instead beta=0.5
         
-        A = [[0, 1], [x0**2, 0]]
+        A = [[0, 1], [eps * x0**2, 0]]
         B = [[0], [1]]
         Q = Id
         
     '''
 
-    def __init__(self, network, gamma, correctShift=False, dim=2):
+    def __init__(self, network, gamma, correctShift=False, dim=2, eps=1.):
         domain = [(-1, 1)] * dim
         HamiltonJacobiBellman.__init__(self, network=network, domain=domain, beta=0.5, gamma=gamma, correctShift=correctShift)
         self.B = torch.tensor([[0, 0],[0, 1]]).float().to(self.device)
         self.Q = torch.eye(dim).to(self.device)
+        self.eps = eps
         self.true_solution = self._loadTrueSolution()
 
         
@@ -593,7 +626,7 @@ class NonLinear(HamiltonJacobiBellman):
         # we need to build a stacked matrix because A depends on x
         stackedMatrices = torch.zeros((x.shape[0], x.shape[1], x.shape[1])).to(self.device)
         stackedMatrices[:, 0, 1] = 1 
-        stackedMatrices[:, 1, 0] = x[:, 0]**2
+        stackedMatrices[:, 1, 0] = self.eps * x[:, 0]**2
         productFx = torch.einsum('ni, nij, nj -> n', gradV, stackedMatrices, x).reshape(-1, 1).to(self.device)
         return productFx
         
@@ -611,9 +644,9 @@ class NonLinear(HamiltonJacobiBellman):
     def dataMatrixFunction(self, x):
         stackedVectors = torch.zeros((x.shape[0], 3)).to(self.device)
 
-        p12 = lambda x: x**2 + torch.sqrt(x**4 + 1)
+        p12 = lambda x: self.eps * x**2 + torch.sqrt( (self.eps**2) * x**4 + 1)
         p22 = lambda x: torch.sqrt( 1 + 2*p12(x) ) 
-        p11 = lambda x: (torch.sqrt(x**4 + 1)) * p22(x)
+        p11 = lambda x: torch.sqrt( (self.eps**2) * x**4 + 1) * p22(x)
 
         stackedVectors[:, 0] = p11( x[:, 0] )
         stackedVectors[:, 1] = p12( x[:, 0] )
@@ -625,9 +658,9 @@ class NonLinear(HamiltonJacobiBellman):
     def dataValueFunction(self, x):
         stackedMatrices = torch.zeros((x.shape[0], x.shape[1], x.shape[1])).to(self.device)
 
-        p12 = lambda x: x**2 + torch.sqrt(x**4 + 1)
+        p12 = lambda x: self.eps * x**2 + torch.sqrt( (self.eps**2) * x**4 + 1)
         p22 = lambda x: torch.sqrt( 1 + 2*p12(x) ) 
-        p11 = lambda x: (torch.sqrt(x**4 + 1)) * p22(x)
+        p11 = lambda x: torch.sqrt( (self.eps**2) * x**4 + 1) * p22(x)
 
         stackedMatrices[:, 0, 0] = p11( x[:, 0] )
         stackedMatrices[:, 0, 1] = p12( x[:, 0] )
@@ -642,13 +675,13 @@ class NonLinear(HamiltonJacobiBellman):
     def dataValueFunctionDerivative(self, x):
         stackedVectors = torch.zeros((x.shape[0], x.shape[1])).to(self.device)
 
-        p12 = lambda x: x**2 + torch.sqrt(x**4 + 1)
+        p12 = lambda x: self.eps * x**2 + torch.sqrt( ((self.eps)**2) * x**4 + 1)
         p22 = lambda x: torch.sqrt( 1 + 2*p12(x) ) 
-        p11 = lambda x: (torch.sqrt(x**4 + 1)) * p22(x)
+        p11 = lambda x: torch.sqrt( ((self.eps)**2) * x**4 + 1) * p22(x)
 
-        p12_deriv = lambda x: 2 * x * ( 1 + x**2 / torch.sqrt(x**4 + 1) )
+        p12_deriv = lambda x: 2 * self.eps * x + (self.eps**2) * x**3 / torch.sqrt( ((self.eps)**2) * x**4 + 1)
         p22_deriv = lambda x: p12_deriv(x) / p22(x)
-        p11_deriv = lambda x: 2 * x**3 / torch.sqrt(x**4 + 1) * p22(x) + torch.sqrt(1 + x**4) * p22_deriv(x)
+        p11_deriv = lambda x: 2 * self.eps * x**3 / torch.sqrt( ((self.eps)**2) * x**4 + 1) * p22(x) + torch.sqrt( ((self.eps)**2) * x**4 + 1) * p22_deriv(x)
 
         v2_deriv = lambda x, y: p12(x) * x + p22(x) * y
         v1_deriv = lambda x, y: 0.5 * ( p11_deriv(x) * x**2 + 2 * x * p11(x) + 2*p12_deriv(x) * x * y + 2*p12(x) * y + y**2 * p22_deriv(x) )
