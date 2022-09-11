@@ -6,6 +6,7 @@ import time
 from abc import ABC, abstractmethod
 from scipy.special import expit, logit
 from scipy.stats import ortho_group
+import spdlayers
 
 def stackWeights(network):
     weights = np.array([])
@@ -59,16 +60,14 @@ class NeuralNet(nn.Module):
         Glorot initialisation.
     '''
 
-    def __init__(self, layers, quadraticForm=False, useAdditionalModel=False, imposePsd=False, imposeCholesky=False, **parameters):
+    def __init__(self, layers, quadraticForm=False, imposePsd=False, imposeCholesky=False, spd=False, **parameters):
         super(NeuralNet, self).__init__()
         self.device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
         self.layers = layers
-        self.model = self._buildModel(layers, imposePsd).to(self.device)
+        self.model = self._buildModel(layers, imposePsd, spd).to(self.device)
         self.quadraticForm = quadraticForm
-        self.useAdditionalModel = useAdditionalModel
-        if self.useAdditionalModel:
-            self.additionalModel = self._buildModel(layers=[ layers[0], 20, layers[0] ], imposePsd=False).to(self.device)
         #np.random.seed(0)
+        self.spd = spd
         self.imposePsd = imposePsd
         if self.imposePsd:
             self.countMatrices = parameters.get('countMatrices', 1)
@@ -76,19 +75,23 @@ class NeuralNet(nn.Module):
             self.orthogonalMatrix = [ torch.tensor( [[-1, -1], [-1, 1]]).float()  / np.sqrt(2) ]
         self.imposeCholesky = imposeCholesky
             
-    def _buildLayers(self, layers, imposePsd):
+    def _buildLayers(self, layers, imposePsd, spd):
         neuralNetLayers = []
         for i in range(len(layers) - 2):
             neuralNetLayers.append(nn.Linear(in_features=layers[i], out_features=layers[i + 1]))
             neuralNetLayers.append( nn.Sigmoid() )
         neuralNetLayers.append(nn.Linear(in_features=layers[-2], out_features=layers[-1]))
         if imposePsd:
-            neuralNetLayers.append( nn.Softplus() )     
+            neuralNetLayers.append( nn.Softplus() )
+        if spd:
+            neuralNetLayers.append( spdlayers.Eigen(output_shape=2,
+                    symmetry='anisotropic',
+                    positive='Exp') )
         return neuralNetLayers
          
         
-    def _buildModel(self, layers, imposePsd):
-        neuralNetLayers = self._buildLayers(layers, imposePsd)
+    def _buildModel(self, layers, imposePsd, spd):
+        neuralNetLayers = self._buildLayers(layers, imposePsd, spd)
         neuralNetModel = nn.Sequential( *neuralNetLayers )
         neuralNetModel = neuralNetModel.apply(self._normalInit)
         return neuralNetModel
@@ -115,6 +118,9 @@ class NeuralNet(nn.Module):
         if self.quadraticForm:
             return self._matrixEvaluated(x)
 
+        elif self.spd:
+            return self._evaluateSpd(x)
+
         elif self.imposePsd:
             return self._matrixEvaluatedPsd(x)
 
@@ -130,6 +136,12 @@ class NeuralNet(nn.Module):
         '''
         return self.model(x)
     
+
+    def _evaluateSpd(self, x):
+        outputModel = self.model(x)
+        valueFunction = 0.5 * torch.einsum('ni, nij, nj -> n', x, outputModel, x).reshape(-1, 1).to(self.device)
+        return valueFunction
+
 
     def _choleskyEvaluated(self, x):
         ''' The output of the network is the symetric matrix P.
@@ -237,90 +249,102 @@ class NeuralNet(nn.Module):
         info = []
 
         for lr, iteration in zip(lrs, iterations):
-            self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-            
-            if self.useAdditionalModel:
-                additionalOptimizer = torch.optim.Adam(params=self.additionalModel.parameters(), lr=lr)
+            self.optimizer = torch.optim.LBFGS(params=self.model.parameters(), lr=lr)
             
             for epoch in range(iteration):
-                # xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
-
-                # compute model dependent quantities
-                if gamma['matrix'] > 0:
-                    matrixData = self.model(xData)
-
-                if gamma['data'] > 0.:
-                    yData = self.computeValueFunction(xData)
-
-                if gamma['gradient'] > 0.:
-                    gradData = self.computeValueFunctionDerivative(xData)
-
-                if gamma['residual'] > 0.:
-                    gradInt = self.computeValueFunctionDerivative(xInt)
-                    
-                if self.useAdditionalModel:
-                    errorDerivative = self.additionalModel(xData)
-                    
-                # compute loss and backpropagate
-                lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
-                loss = (
-                    gamma['data'] * lossData + 
-                    gamma['gradient'] * lossGrad + 
-                    gamma['residual'] * lossResidual +
-                    gamma['matrix'] * lossMatrix
-                     )
-                
-                if self.useAdditionalModel:
+                def closure():
+                    gradInt = torch.zeros( xInt.shape ).to(self.device)
+                    yData = torch.zeros( (xData.shape[0], 1) ).to(self.device)
                     self.optimizer.zero_grad()
-                    additionalOptimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
-                    additionalOptimizer.step()
-                    
-                else:
-                    self.optimizer.zero_grad()
-                    loss.backward()
-                    self.optimizer.step()
+                    if gamma['data'] > 0.:
+                        yData = self.computeValueFunction(xData)
+                    if gamma['residual'] > 0.:
+                        gradInt = self.computeValueFunctionDerivative(xInt)
 
-
-                # print logs
-                if (epochTotal % 100 == 0):
-                    if verbose:
-                        print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
-                            epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
-                            )
+                    lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
+                    loss = (
+                        gamma['data'] * lossData + 
+                        gamma['gradient'] * lossGrad + 
+                        gamma['residual'] * lossResidual +
+                        gamma['matrix'] * lossMatrix
                         )
+                    loss.backward()
+                    return loss
 
-                    mse = torch.tensor(0.).to(self.device)
+                loss = self.optimizer.step(closure)
 
-                    if useTestData:
-                    # check on test set
-                        # if gamma['data'] > 0.:
-                        yDataTest = self.computeValueFunction(xDataTest)
-                        print('yDataTest', yDataTest[:5])
-                        print('yTrueTest', yTrueTest[:5])
-                        lossDataTest = torch.mean( (yDataTest.double() - yTrueTest.double())**2 ).float().to(self.device)
-                        print('lossDataTest: %.2e'%lossDataTest.detach().cpu().numpy().item())
-                        mse = lossDataTest
 
-                        # if  gamma['gradient'] > 0.:
-                        gradDataTest = self.computeValueFunctionDerivative(xDataTest)
-                        lossGradientTest = torch.mean( (gradDataTest.double() - gradTrueTest.double())**2 ).float().to(self.device)
-                        print('lossGradientTest: %.2e'%lossGradientTest.detach().cpu().numpy().item())
+
+            # self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
+            # for epoch in range(iteration):
+            #     # xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
+
+            #     # compute model dependent quantities
+            #     if gamma['matrix'] > 0:
+            #         matrixData = self.model(xData)
+
+            #     if gamma['data'] > 0.:
+            #         yData = self.computeValueFunction(xData)
+
+            #     if gamma['gradient'] > 0.:
+            #         gradData = self.computeValueFunctionDerivative(xData)
+
+            #     if gamma['residual'] > 0.:
+            #         gradInt = self.computeValueFunctionDerivative(xInt)
+
+                    
+            #     # compute loss and backpropagate
+            #     lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
+            #     loss = (
+            #         gamma['data'] * lossData + 
+            #         gamma['gradient'] * lossGrad + 
+            #         gamma['residual'] * lossResidual +
+            #         gamma['matrix'] * lossMatrix
+            #          )
+                    
+            #     self.optimizer.zero_grad()
+            #     loss.backward()
+            #     self.optimizer.step()
+
+
+            #     # print logs
+            #     if (epochTotal % 100 == 0):
+            #         if verbose:
+            #             print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
+            #                 epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
+            #                 )
+            #             )
+
+            #         mse = torch.tensor(0.).to(self.device)
+
+            #         if useTestData:
+            #         # check on test set
+            #             # if gamma['data'] > 0.:
+            #             yDataTest = self.computeValueFunction(xDataTest)
+            #             print('yDataTest', yDataTest[:5])
+            #             print('yTrueTest', yTrueTest[:5])
+            #             lossDataTest = torch.mean( (yDataTest.double() - yTrueTest.double())**2 ).float().to(self.device)
+            #             print('lossDataTest: %.2e'%lossDataTest.detach().cpu().numpy().item())
+            #             mse = lossDataTest
+
+            #             # if  gamma['gradient'] > 0.:
+            #             gradDataTest = self.computeValueFunctionDerivative(xDataTest)
+            #             lossGradientTest = torch.mean( (gradDataTest.double() - gradTrueTest.double())**2 ).float().to(self.device)
+            #             print('lossGradientTest: %.2e'%lossGradientTest.detach().cpu().numpy().item())
                         
-                    else:
-                        yEvaluation = self.computeValueFunction(xEvaluation)
-                        mse = evaluationFunction(yEvaluation)
-                        # print('mse: %.2e' %mse)
+            #         else:
+            #             yEvaluation = self.computeValueFunction(xEvaluation)
+            #             mse = evaluationFunction(yEvaluation)
+            #             # print('mse: %.2e' %mse)
 
-                epochTotal += 1
-                info_dict = {
-                    'xData': xData,
-                    'epoch': epochTotal,
-                    'mse': mse.detach().cpu().numpy().item(),
-                    'loss': loss.detach().cpu().numpy().item()
-                    }
-                info.append(info_dict)
+            #     epochTotal += 1
+            #     info_dict = {
+            #         'xData': xData,
+            #         'epoch': epochTotal,
+            #         'mse': mse.detach().cpu().numpy().item(),
+            #         'loss': loss.detach().cpu().numpy().item()
+            #         }
+            #     info.append(info_dict)
 
         return pd.DataFrame( info )
 
