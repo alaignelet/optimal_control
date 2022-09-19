@@ -1,3 +1,4 @@
+from pickletools import optimize
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -50,7 +51,7 @@ class GenerateData(object):
 
     def sampleGrid(self, nPoint=100):
         gridPoints = np.meshgrid( *[np.linspace(-1, 1, nPoint) for i in range(self.dim)] )
-        gridPoints = torch.tensor( list(gridPoints) ).T.float().reshape(-1, self.dim)
+        gridPoints = torch.tensor( list(gridPoints), requires_grad=True ).T.float().reshape(-1, self.dim)
         return gridPoints
 
 
@@ -68,6 +69,7 @@ class NeuralNet(nn.Module):
         self.quadraticForm = quadraticForm
         #np.random.seed(0)
         self.spd = spd
+        self.spdPositive = parameters.get('spdPositive', 'Exp')
         self.imposePsd = imposePsd
         if self.imposePsd:
             self.countMatrices = parameters.get('countMatrices', 1)
@@ -80,6 +82,7 @@ class NeuralNet(nn.Module):
         for i in range(len(layers) - 2):
             neuralNetLayers.append(nn.Linear(in_features=layers[i], out_features=layers[i + 1]))
             neuralNetLayers.append( nn.Sigmoid() )
+            #neuralNetLayers.append( nn.ReLU() )
         neuralNetLayers.append(nn.Linear(in_features=layers[-2], out_features=layers[-1]))
         if imposePsd:
             neuralNetLayers.append( nn.Softplus() )
@@ -98,8 +101,10 @@ class NeuralNet(nn.Module):
 
     
     def _normalInit(self, layer):
+        torch.manual_seed(1)
         if type(layer) == nn.Linear:
             torch.nn.init.xavier_normal_(layer.weight)
+            #torch.nn.init.orthogonal_(layer.weight)
             
             
     def partialDerivative(self, tensorToDerive, x):
@@ -216,7 +221,7 @@ class NeuralNet(nn.Module):
         return valueFunction        
         
         
-    def train(self, feedDict, lrs, iterations, useTestData, verbose=False):
+    def train(self, feedDict, lrs, iterations, useTestData, verbose=False, optimizer='adam'):
         ''' Training function.
         '''
         gamma = feedDict['gamma']
@@ -249,18 +254,62 @@ class NeuralNet(nn.Module):
         info = []
 
         for lr, iteration in zip(lrs, iterations):
-            self.optimizer = torch.optim.LBFGS(params=self.model.parameters(), lr=lr)
-            
-            for epoch in range(iteration):
-                def closure():
-                    gradInt = torch.zeros( xInt.shape ).to(self.device)
-                    yData = torch.zeros( (xData.shape[0], 1) ).to(self.device)
-                    self.optimizer.zero_grad()
+
+            if optimizer == 'lbfgs':
+                self.optimizer = torch.optim.LBFGS(params=self.model.parameters(), lr=lr)
+                
+                for epoch in range(iteration):
+                    def closure():
+                        gradInt = torch.zeros( xInt.shape ).to(self.device)
+                        yData = torch.zeros( (xData.shape[0], 1) ).to(self.device)
+                        self.optimizer.zero_grad()
+                        if gamma['data'] > 0.:
+                            yData = self.computeValueFunction(xData)
+                        if gamma['residual'] > 0.:
+                            gradInt = self.computeValueFunctionDerivative(xInt)
+
+                        lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
+                        loss = (
+                            gamma['data'] * lossData + 
+                            gamma['gradient'] * lossGrad + 
+                            gamma['residual'] * lossResidual +
+                            gamma['matrix'] * lossMatrix
+                            )
+                        loss.backward()
+                        return loss
+
+                    loss = self.optimizer.step(closure)
+
+
+                    epochTotal += 1
+                    info_dict = {
+                        'xData': xData,
+                        'epoch': epochTotal,
+                        'loss': loss.detach().cpu().numpy().item()
+                        }
+                    info.append(info_dict)
+
+            elif optimizer == 'adam':
+                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr, weight_decay=1e-3)
+                
+                for epoch in range(iteration):
+
+                    #xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
+
+                    # compute model dependent quantities
+                    if gamma['matrix'] > 0:
+                        matrixData = self.model(xData)
+
                     if gamma['data'] > 0.:
                         yData = self.computeValueFunction(xData)
+
+                    if gamma['gradient'] > 0.:
+                        gradData = self.computeValueFunctionDerivative(xData)
+
                     if gamma['residual'] > 0.:
                         gradInt = self.computeValueFunctionDerivative(xInt)
 
+                    # compute loss and backpropagate
                     lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
                     loss = (
                         gamma['data'] * lossData + 
@@ -268,83 +317,50 @@ class NeuralNet(nn.Module):
                         gamma['residual'] * lossResidual +
                         gamma['matrix'] * lossMatrix
                         )
-                    loss.backward()
-                    return loss
-
-                loss = self.optimizer.step(closure)
-
-
-
-            # self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr)
-            # for epoch in range(iteration):
-            #     # xInt = dataSampler.samplePoints(interiorPointCount).to(self.device)
-
-            #     # compute model dependent quantities
-            #     if gamma['matrix'] > 0:
-            #         matrixData = self.model(xData)
-
-            #     if gamma['data'] > 0.:
-            #         yData = self.computeValueFunction(xData)
-
-            #     if gamma['gradient'] > 0.:
-            #         gradData = self.computeValueFunctionDerivative(xData)
-
-            #     if gamma['residual'] > 0.:
-            #         gradInt = self.computeValueFunctionDerivative(xInt)
-
-                    
-            #     # compute loss and backpropagate
-            #     lossData, lossGrad, lossResidual, lossMatrix = lossFunction(xInt, gradInt, yData, gradData, matrixData, errorDerivative)
-            #     loss = (
-            #         gamma['data'] * lossData + 
-            #         gamma['gradient'] * lossGrad + 
-            #         gamma['residual'] * lossResidual +
-            #         gamma['matrix'] * lossMatrix
-            #          )
-                    
-            #     self.optimizer.zero_grad()
-            #     loss.backward()
-            #     self.optimizer.step()
-
-
-            #     # print logs
-            #     if (epochTotal % 100 == 0):
-            #         if verbose:
-            #             print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
-            #                 epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
-            #                 )
-            #             )
-
-            #         mse = torch.tensor(0.).to(self.device)
-
-            #         if useTestData:
-            #         # check on test set
-            #             # if gamma['data'] > 0.:
-            #             yDataTest = self.computeValueFunction(xDataTest)
-            #             print('yDataTest', yDataTest[:5])
-            #             print('yTrueTest', yTrueTest[:5])
-            #             lossDataTest = torch.mean( (yDataTest.double() - yTrueTest.double())**2 ).float().to(self.device)
-            #             print('lossDataTest: %.2e'%lossDataTest.detach().cpu().numpy().item())
-            #             mse = lossDataTest
-
-            #             # if  gamma['gradient'] > 0.:
-            #             gradDataTest = self.computeValueFunctionDerivative(xDataTest)
-            #             lossGradientTest = torch.mean( (gradDataTest.double() - gradTrueTest.double())**2 ).float().to(self.device)
-            #             print('lossGradientTest: %.2e'%lossGradientTest.detach().cpu().numpy().item())
                         
-            #         else:
-            #             yEvaluation = self.computeValueFunction(xEvaluation)
-            #             mse = evaluationFunction(yEvaluation)
-            #             # print('mse: %.2e' %mse)
+                    self.optimizer.zero_grad()
+                    loss.backward()
+                    self.optimizer.step()
 
-            #     epochTotal += 1
-            #     info_dict = {
-            #         'xData': xData,
-            #         'epoch': epochTotal,
-            #         'mse': mse.detach().cpu().numpy().item(),
-            #         'loss': loss.detach().cpu().numpy().item()
-            #         }
-            #     info.append(info_dict)
+
+                    # print logs
+                    if (epochTotal % 100 == 0):
+                        if verbose:
+                            print('%d / %d (%d / %d), lr:%.1e, loss:%.2e (data: %.2e, grad: %.2e, res: %.2e, mat: %.2e)' % (
+                                epochTotal, sum(iterations), epoch, iteration, lr, loss, lossData, lossGrad, lossResidual, lossMatrix
+                                )
+                            )
+
+                        mse = torch.tensor(0.).to(self.device)
+
+                        if useTestData:
+                        # check on test set
+                            # if gamma['data'] > 0.:
+                            yDataTest = self.computeValueFunction(xDataTest)
+                            print('yDataTest', yDataTest[:5])
+                            print('yTrueTest', yTrueTest[:5])
+                            lossDataTest = torch.mean( (yDataTest.double() - yTrueTest.double())**2 ).float().to(self.device)
+                            print('lossDataTest: %.2e'%lossDataTest.detach().cpu().numpy().item())
+                            mse = lossDataTest
+
+                            # if  gamma['gradient'] > 0.:
+                            gradDataTest = self.computeValueFunctionDerivative(xDataTest)
+                            lossGradientTest = torch.mean( (gradDataTest.double() - gradTrueTest.double())**2 ).float().to(self.device)
+                            print('lossGradientTest: %.2e'%lossGradientTest.detach().cpu().numpy().item())
+                            
+                        else:
+                            yEvaluation = self.computeValueFunction(xEvaluation)
+                            mse = evaluationFunction(yEvaluation)
+                            # print('mse: %.2e' %mse)
+
+                    epochTotal += 1
+                    info_dict = {
+                        'xData': xData,
+                        'epoch': epochTotal,
+                        'mse': mse.detach().cpu().numpy().item(),
+                        'loss': loss.detach().cpu().numpy().item()
+                        }
+                    info.append(info_dict)
 
         return pd.DataFrame( info )
 
@@ -369,12 +385,15 @@ class HamiltonJacobiBellman(ABC):
         self.correctShift = correctShift
 
 
-    def train(self, interiorPointCount, dataPointCount, lrs, iterations, useTestData=False, verbose=False):
+    def train(self, interiorPointCount, dataPointCount, lrs, iterations, useTestData=False, verbose=False, optimizer='adam', sampling='random'):
         ''' Generate data and train.
         '''
 
         # interior points
-        xInt = self.dataSampler.samplePoints(interiorPointCount).to(self.device)
+        if sampling == 'random':
+            xInt = self.dataSampler.samplePoints(interiorPointCount).to(self.device)
+        elif sampling == 'grid':
+            xInt = self.dataSampler.sampleGrid(interiorPointCount).to(self.device)
         print('xInt: ', xInt.shape)
         
         if useTestData:
@@ -431,7 +450,7 @@ class HamiltonJacobiBellman(ABC):
                 'dataSampler': self.dataSampler
             }
         
-        lossValues = self.network.train(feedDict, lrs, iterations, useTestData, verbose)
+        lossValues = self.network.train(feedDict, lrs, iterations, useTestData, verbose, optimizer)
 
         return lossValues
 
