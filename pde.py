@@ -253,6 +253,13 @@ class NeuralNet(nn.Module):
         epochTotal = 0
         info = []
 
+        # distance matrix
+        from scipy.spatial.distance import cdist
+        s = 1.
+        distMatrix = cdist(xInt.detach().numpy(), xInt.detach().numpy(), lambda u, v: np.exp(-np.linalg.norm(u-v)**2 / s))
+        if epochTotal == 0:
+            print(distMatrix)
+
         for lr, iteration in zip(lrs, iterations):
 
             if optimizer == 'lbfgs':
@@ -275,6 +282,11 @@ class NeuralNet(nn.Module):
                             gamma['residual'] * lossResidual +
                             gamma['matrix'] * lossMatrix
                             )
+
+                        # regularisation for xInt
+                        yInt = self.computeValueFunction(xInt)
+                        loss += 1e-1 * ( ( yInt - yInt.T )**2 * torch.tensor(distMatrix).float() ).sum()
+
                         loss.backward()
                         return loss
 
@@ -290,7 +302,7 @@ class NeuralNet(nn.Module):
                     info.append(info_dict)
 
             elif optimizer == 'adam':
-                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr, weight_decay=1e-3)
+                self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=lr, weight_decay=0.)
                 
                 for epoch in range(iteration):
 
@@ -318,10 +330,13 @@ class NeuralNet(nn.Module):
                         gamma['matrix'] * lossMatrix
                         )
                         
+                    # regularisation for xInt
+                    yInt = self.computeValueFunction(xInt)
+                    loss +=  1 * ( ( yInt - yInt.T )**2 * torch.tensor(distMatrix).float() ).sum()
+
                     self.optimizer.zero_grad()
                     loss.backward()
                     self.optimizer.step()
-
 
                     # print logs
                     if (epochTotal % 100 == 0):
