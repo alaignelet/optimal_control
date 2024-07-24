@@ -1,13 +1,15 @@
-from pickletools import optimize
-import torch
-import torch.nn as nn
-import pandas as pd
-import numpy as np
 import time
 from abc import ABC, abstractmethod
+from pickletools import optimize
+
+import numpy as np
+import pandas as pd
+import spdlayers
+import torch
+import torch.nn as nn
 from scipy.special import expit, logit
 from scipy.stats import ortho_group
-import spdlayers
+
 
 def stackWeights(network):
     weights = np.array([])
@@ -87,7 +89,7 @@ class NeuralNet(nn.Module):
         if imposePsd:
             neuralNetLayers.append( nn.Softplus() )
         if spd:
-            neuralNetLayers.append( spdlayers.Eigen(output_shape=2,
+            neuralNetLayers.append( spdlayers.Cholesky(output_shape=2,
                     symmetry='anisotropic',
                     positive='Exp') )
         return neuralNetLayers
