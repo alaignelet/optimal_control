@@ -24,35 +24,40 @@ class HamiltonJacobiBellman(ABC):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.correctShift = correctShift
 
-    def train(
-        self,
-        interiorPointCount,
-        dataPointCount,
-        lrs,
-        iterations,
-        verbose=False,
-        sampling="random",
-    ):
-        """Generate data and train."""
+    def train(self, interiorPointCount, dataPointCount, lrs, iterations, sampling):
+        """
+        Generate data and train the network.
 
-        # interior points
+        Args:
+            interiorPointCount (int): The number of interior points to generate.
+            dataPointCount (int): The number of data points to generate.
+            lrs (list): A list of learning rates to use during training.
+            iterations (int): The number of training iterations.
+            sampling (str): The sampling method to use for generating interior points.
+                Can be either "random" or "grid". Defaults to "random".
+
+        Returns:
+            list: A list of loss values during training.
+
+        """
+        # Sample interior points
         if sampling == "random":
             xInt = self.dataSampler.samplePoints(interiorPointCount).to(self.device)
         elif sampling == "grid":
             xInt = self.dataSampler.sampleGrid(interiorPointCount).to(self.device)
-        print("xInt: ", xInt.shape)
 
-        # space
+        # Sample evaluation points for out of sample performance
         xEvaluation = self.getEvaluationPoints().to(self.device)
         self.yEvaluationTrue = self.groundTruthSolution(xEvaluation.detach())
 
-        # train
+        # Sample data points
         xData = self.getDataPoints(dataPointCount).to(self.device)
-        self.matrixTrue = self.dataMatrixFunction(xData.detach()).to(self.device)
+
+        # Compute the true values for the data points and their derivatives
         self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)
         self.gradTrue = self.dataValueFunctionDerivative(xData.detach()).to(self.device)
-        print("xData: ", xData.shape)
 
+        # Build feed dictionary to train the network
         feedDict = {
             "xEvaluation": xEvaluation,
             "xInt": xInt,
@@ -64,9 +69,8 @@ class HamiltonJacobiBellman(ABC):
             "dataSampler": self.dataSampler,
         }
 
-        lossValues = self.network.train(feedDict, lrs, iterations, verbose)
-
-        return lossValues
+        # Train the network and return the loss values
+        return self.network.train(feedDict, lrs, iterations)
 
     def lossFunction(self, xInt, gradInt, yData, gradData, matrixData):
         """
@@ -86,20 +90,12 @@ class HamiltonJacobiBellman(ABC):
                 - residualInt (torch.Tensor): Residual value for the Hamilton-Jacobi equation.
                 - lossMatrix (torch.Tensor): Loss value for matrix.
         """
-        lossMatrix = torch.tensor([0]).float().to(self.device)
         residualInt = torch.tensor([0]).float().to(self.device)
         lossData = torch.tensor([0]).float().to(self.device)
         lossGradient = torch.tensor([0]).float().to(self.device)
 
-        if self.gamma["matrix"] > 0.0:
-            lossMatrix = (
-                torch.mean((matrixData.double() - self.matrixTrue.double()) ** 2)
-                .float()
-                .to(self.device)
-            )
-
         if self.gamma["residual"] > 0.0:
-            equation = self.computeHamiltonJacobiEquation(xInt, gradInt)
+            equation = self._computeHamiltonJacobiEquation(xInt, gradInt)
             residualInt = torch.mean(equation**2).to(self.device)
 
         if self.gamma["data"] > 0.0:
@@ -116,12 +112,12 @@ class HamiltonJacobiBellman(ABC):
                 .to(self.device)
             )
 
-        return lossData, lossGradient, residualInt, lossMatrix
+        return lossData, lossGradient, residualInt
 
     def evaluationFunction(self, yEvaluation):
         """Evaluate the performance on out of sample points."""
 
-        # for two steps training, we need to remove the z-shift
+        # For two steps training, we need to remove the z-shift
         if self.correctShift:
             yEvaluation -= yEvaluation.min()
 
@@ -132,7 +128,7 @@ class HamiltonJacobiBellman(ABC):
         )
         return meanSquaredError
 
-    def computeHamiltonJacobiEquation(self, x, gradV):
+    def _computeHamiltonJacobiEquation(self, x, gradV):
         return (
             self.computeGxTerm(gradV)
             + self.computeFxTerm(x, gradV)
@@ -250,10 +246,6 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         P = alpha1 * torch.eye(n=self.dim)
         inds = np.triu_indices(self.dim)
         return P[inds].repeat(x.shape[0], 1)
-
-    def getDataPoints(self, dataPointCount):
-        sampledPoints = self.dataSampler.samplePoints(dataPointCount)
-        return sampledPoints
 
     def groundTruthSolution(self, xEvaluation):
         groundTruth = self.dataValueFunction(xEvaluation).reshape(-1, 1)
@@ -439,10 +431,6 @@ class NonLinear(HamiltonJacobiBellman):
             torch.tensor(trueSolution.to_numpy()).reshape(-1, 1).to(self.device)
         )
         return trueSolution
-
-    def getDataPoints(self, dataPointCount):
-        sampledPoints = self.dataSampler.samplePoints(dataPointCount)
-        return sampledPoints
 
     def groundTruthSolution(self, xEvaluation):
         return self.true_solution

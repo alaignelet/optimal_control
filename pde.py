@@ -13,20 +13,6 @@ from scipy.stats import ortho_group
 from generateData import GenerateData
 
 
-def stackWeights(network):
-    weights = np.array([])
-    for layer in network.layers:
-        if type(layer) == nn.Linear:
-            weights = np.concatenate(
-                [
-                    weights,
-                    layer.weight.detach().numpy().flatten(),
-                    layer.bias.detach().numpy().flatten(),
-                ]
-            )
-    return weights
-
-
 class NeuralNet(nn.Module):
     """Neural Network used as a mapping function.
     Glorot initialisation.
