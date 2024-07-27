@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 import logging
 
 # Set up logger
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("training")
 
 
 class BaseNeuralNet(nn.Module, ABC):
@@ -140,7 +140,7 @@ class BaseNeuralNet(nn.Module, ABC):
                 self.optimizer.step()
 
                 # Print training logs
-                if epochTotal % 100 == 0:
+                if epochTotal % 1000 == 0:
                     logger.info(
                         f"{epochTotal} / {sum(iterations)} ({epoch} / {iteration}), "
                         f"lr:{lr:.1e}, loss:{loss.item():.2e} (data: {lossData.item():.2e}, "
