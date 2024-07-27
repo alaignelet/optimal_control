@@ -2,12 +2,11 @@ import numpy as np
 import torch
 
 
-import numpy as np
-import torch
-
-
 class GenerateData:
-    """Generate data points."""
+    """Generate data points.
+
+    This class provides methods to generate random sample points within a specified domain.
+    """
 
     def __init__(self, domain):
         self.domain = domain
@@ -16,12 +15,13 @@ class GenerateData:
     def samplePoints(self, pointCount):
         """Sample the interior of the domain.
 
+        This method generates random sample points within the specified domain.
+
         Parameters:
-            pointCount: int
-                eg: 100
+            pointCount (int): The number of sample points to generate.
 
         Returns:
-            xPoint: torch.Tensor
+            torch.Tensor: A tensor containing the sampled points.
         """
         xPoint = []
         for i in range(self.dim):
@@ -36,7 +36,17 @@ class GenerateData:
         xPoint = torch.tensor(xPoint, requires_grad=True, dtype=torch.float32)
         return xPoint
 
-    def sampleGrid(self, nPoint=100):
+    def sampleGrid(self, nPoint):
+        """Sample the grid within the domain.
+
+        This method generates a grid of sample points within the specified domain.
+
+        Parameters:
+            nPoint (int): The number of points along each dimension of the grid.
+
+        Returns:
+            torch.Tensor: A tensor containing the grid points.
+        """
         gridPoints = np.meshgrid(*[np.linspace(-1, 1, nPoint) for _ in range(self.dim)])
 
         # Stack the arrays, transpose, and reshape

@@ -30,9 +30,7 @@ class HamiltonJacobiBellman(ABC):
         dataPointCount,
         lrs,
         iterations,
-        useTestData=False,
         verbose=False,
-        optimizer="adam",
         sampling="random",
     ):
         """Generate data and train."""
@@ -70,9 +68,24 @@ class HamiltonJacobiBellman(ABC):
 
         return lossValues
 
-    def lossFunction(self, xInt, gradInt, yData, gradData, matrixData, errorDerivative):
-        """Compute the loss function."""
+    def lossFunction(self, xInt, gradInt, yData, gradData, matrixData):
+        """
+        Compute the loss function.
 
+        Args:
+            xInt (torch.Tensor): Input tensor for xInt.
+            gradInt (torch.Tensor): Input tensor for gradInt.
+            yData (torch.Tensor): Input tensor for yData.
+            gradData (torch.Tensor): Input tensor for gradData.
+            matrixData (torch.Tensor): Input tensor for matrixData.
+
+        Returns:
+            tuple: A tuple containing the following loss values:
+                - lossData (torch.Tensor): Loss value for data.
+                - lossGradient (torch.Tensor): Loss value for gradient.
+                - residualInt (torch.Tensor): Residual value for the Hamilton-Jacobi equation.
+                - lossMatrix (torch.Tensor): Loss value for matrix.
+        """
         lossMatrix = torch.tensor([0]).float().to(self.device)
         residualInt = torch.tensor([0]).float().to(self.device)
         lossData = torch.tensor([0]).float().to(self.device)
@@ -98,14 +111,7 @@ class HamiltonJacobiBellman(ABC):
 
         if self.gamma["gradient"] > 0.0:
             lossGradient = (
-                torch.mean(
-                    (
-                        gradData.double()
-                        - self.gradTrue.double()
-                        - errorDerivative.double()
-                    )
-                    ** 2
-                )
+                torch.mean((gradData.double() - self.gradTrue.double()) ** 2)
                 .float()
                 .to(self.device)
             )
@@ -164,6 +170,10 @@ class HamiltonJacobiBellman(ABC):
     @abstractmethod
     def groundTruthSolution(self):
         pass
+
+    @abstractmethod
+    def getDataPoints(self, dataPointCount):
+        return self.dataSampler.samplePoints(dataPointCount)
 
 
 class LinearQuadraticRegulator(HamiltonJacobiBellman):

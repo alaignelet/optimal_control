@@ -26,3 +26,5 @@ __pycache__/pde.cpython-311.pyc
 __pycache__/generateData.cpython-311.pyc
 __pycache__/neuralNet.cpython-311.pyc
 __pycache__/pdes.cpython-311.pyc
+tests/__pycache__/test_generateData.cpython-311-pytest-8.3.2.pyc
+tests/__pycache__/test_generateData.cpython-311.pyc
