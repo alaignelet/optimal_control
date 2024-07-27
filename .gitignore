@@ -23,3 +23,6 @@ graph_results/non_linear_eps0_svd_value_good.png
 graph_results/non_linear_eps1_cholesky_mse_good.png
 graph_results/non_linear_eps1_cholesky_value_good.png
 __pycache__/pde.cpython-311.pyc
+__pycache__/generateData.cpython-311.pyc
+__pycache__/neuralNet.cpython-311.pyc
+__pycache__/pdes.cpython-311.pyc

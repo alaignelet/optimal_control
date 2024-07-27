@@ -108,7 +108,6 @@ class BaseNeuralNet(nn.Module, ABC):
                 info_dict = {
                     "xData": xData,
                     "epoch": epochTotal,
-                    "mse": mse.detach().cpu().numpy().item(),
                     "loss": loss.detach().cpu().numpy().item(),
                 }
                 info.append(info_dict)
@@ -159,13 +158,7 @@ class MatrixNeuralNet(BaseNeuralNet):
         )
         return neuralNetLayers
 
-    def _buildModel(self, layers, imposePsd, spd):
-        neuralNetLayers = self._buildLayers(layers, imposePsd, spd)
-        neuralNetModel = nn.Sequential(*neuralNetLayers)
-        neuralNetModel = neuralNetModel.apply(self._normalInit)
-        return neuralNetModel
-
-    def _normalInit(self, layer):
+    def _weightInitialisation(self, layer):
         torch.manual_seed(1)
         if type(layer) == nn.Linear:
             torch.nn.init.xavier_normal_(layer.weight)

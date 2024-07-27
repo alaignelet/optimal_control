@@ -2,7 +2,11 @@ import numpy as np
 import torch
 
 
-class GenerateData(object):
+import numpy as np
+import torch
+
+
+class GenerateData:
     """Generate data points."""
 
     def __init__(self, domain):
@@ -13,15 +17,12 @@ class GenerateData(object):
         """Sample the interior of the domain.
 
         Parameters:
-            domain: tuple of lists
-                eg: ([0, 1], [0, 1])
             pointCount: int
                 eg: 100
 
         Returns:
-            xPoint: list of numpy.array
+            xPoint: torch.Tensor
         """
-
         xPoint = []
         for i in range(self.dim):
             xPoint.append(
@@ -30,14 +31,17 @@ class GenerateData(object):
                 )
             )
 
-        xPoint = torch.tensor(xPoint, requires_grad=True)[:, :, 0].T.float()
+        # Convert list of numpy arrays to a single numpy array, then to a tensor
+        xPoint = np.array(xPoint).squeeze().T
+        xPoint = torch.tensor(xPoint, requires_grad=True, dtype=torch.float32)
         return xPoint
 
     def sampleGrid(self, nPoint=100):
-        gridPoints = np.meshgrid(*[np.linspace(-1, 1, nPoint) for i in range(self.dim)])
-        gridPoints = (
-            torch.tensor(list(gridPoints), requires_grad=True)
-            .T.float()
-            .reshape(-1, self.dim)
-        )
+        gridPoints = np.meshgrid(*[np.linspace(-1, 1, nPoint) for _ in range(self.dim)])
+
+        # Stack the arrays, transpose, and reshape
+        gridPoints = np.stack(gridPoints, axis=-1).reshape(-1, self.dim)
+
+        # Convert to tensor
+        gridPoints = torch.tensor(gridPoints, requires_grad=True, dtype=torch.float32)
         return gridPoints

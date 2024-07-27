@@ -44,78 +44,29 @@ class HamiltonJacobiBellman(ABC):
             xInt = self.dataSampler.sampleGrid(interiorPointCount).to(self.device)
         print("xInt: ", xInt.shape)
 
-        if useTestData:
+        # space
+        xEvaluation = self.getEvaluationPoints().to(self.device)
+        self.yEvaluationTrue = self.groundTruthSolution(xEvaluation.detach())
 
-            dataPointCountTrain = int(0.8 * dataPointCount)
+        # train
+        xData = self.getDataPoints(dataPointCount).to(self.device)
+        self.matrixTrue = self.dataMatrixFunction(xData.detach()).to(self.device)
+        self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)
+        self.gradTrue = self.dataValueFunctionDerivative(xData.detach()).to(self.device)
+        print("xData: ", xData.shape)
 
-            # train
-            xData = self.getDataPoints(dataPointCount).to(self.device)[
-                :dataPointCountTrain
-            ]
-            self.matrixTrue = self.dataMatrixFunction(xData.detach()).to(self.device)[
-                :dataPointCountTrain
-            ]
-            self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)[
-                :dataPointCountTrain
-            ]
-            self.gradTrue = self.dataValueFunctionDerivative(xData.detach()).to(
-                self.device
-            )[:dataPointCountTrain]
-            print("xData: ", xData.shape)
+        feedDict = {
+            "xEvaluation": xEvaluation,
+            "xInt": xInt,
+            "xData": xData,
+            "gamma": self.gamma,
+            "lossFunction": self.lossFunction,
+            "evaluationFunction": self.evaluationFunction,
+            "groundTruthSolution": self.groundTruthSolution,
+            "dataSampler": self.dataSampler,
+        }
 
-            # test
-            xDataTest = self.getDataPoints(dataPointCount).to(self.device)[
-                dataPointCountTrain:
-            ]
-            yTrueTest = self.dataValueFunction(xData.detach()).to(self.device)[
-                dataPointCountTrain:
-            ]
-            gradTrueTest = self.dataValueFunctionDerivative(xData.detach()).to(
-                self.device
-            )[dataPointCountTrain:]
-            print("xDataTest: ", xDataTest.shape)
-
-            feedDict = {
-                "xInt": xInt,
-                "xData": xData,
-                "gamma": self.gamma,
-                "lossFunction": self.lossFunction,
-                "evaluationFunction": self.evaluationFunction,
-                "groundTruthSolution": self.groundTruthSolution,
-                "xDataTest": xDataTest,
-                "yTrueTest": yTrueTest,
-                "gradTrueTest": gradTrueTest,
-                "dataSampler": self.dataSampler,
-            }
-
-        else:
-            # space
-            xEvaluation = self.getEvaluationPoints().to(self.device)
-            self.yEvaluationTrue = self.groundTruthSolution(xEvaluation.detach())
-
-            # train
-            xData = self.getDataPoints(dataPointCount).to(self.device)
-            self.matrixTrue = self.dataMatrixFunction(xData.detach()).to(self.device)
-            self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)
-            self.gradTrue = self.dataValueFunctionDerivative(xData.detach()).to(
-                self.device
-            )
-            print("xData: ", xData.shape)
-
-            feedDict = {
-                "xEvaluation": xEvaluation,
-                "xInt": xInt,
-                "xData": xData,
-                "gamma": self.gamma,
-                "lossFunction": self.lossFunction,
-                "evaluationFunction": self.evaluationFunction,
-                "groundTruthSolution": self.groundTruthSolution,
-                "dataSampler": self.dataSampler,
-            }
-
-        lossValues = self.network.train(
-            feedDict, lrs, iterations, useTestData, verbose, optimizer
-        )
+        lossValues = self.network.train(feedDict, lrs, iterations, verbose)
 
         return lossValues
 
