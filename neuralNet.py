@@ -143,8 +143,8 @@ class BaseNeuralNet(nn.Module, ABC):
                 if epochTotal % 100 == 0:
                     logger.info(
                         f"{epochTotal} / {sum(iterations)} ({epoch} / {iteration}), "
-                        f"lr:{lr:.1e}, loss:{loss:.2e} (data: {lossData:.2e}, "
-                        f"grad: {lossGrad:.2e}, res: {lossResidual:.2e}"
+                        f"lr:{lr:.1e}, loss:{loss.item():.2e} (data: {lossData.item():.2e}, "
+                        f"grad: {lossGrad.item():.2e}, res: {lossResidual.item():.2e})"
                     )
 
                 epochTotal += 1
