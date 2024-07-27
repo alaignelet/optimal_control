@@ -51,7 +51,7 @@ class HamiltonJacobiBellman(ABC):
         self.yEvaluationTrue = self.groundTruthSolution(xEvaluation.detach())
 
         # Sample data points
-        xData = self.getDataPoints(dataPointCount).to(self.device)
+        xData = self._getDataPoints(dataPointCount).to(self.device)
 
         # Compute the true values for the data points and their derivatives
         self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)
@@ -72,7 +72,7 @@ class HamiltonJacobiBellman(ABC):
         # Train the network and return the loss values
         return self.network.train(feedDict, lrs, iterations)
 
-    def lossFunction(self, xInt, gradInt, yData, gradData, matrixData):
+    def lossFunction(self, xInt, gradInt, yData, gradData):
         """
         Compute the loss function.
 
@@ -81,14 +81,12 @@ class HamiltonJacobiBellman(ABC):
             gradInt (torch.Tensor): Input tensor for gradInt.
             yData (torch.Tensor): Input tensor for yData.
             gradData (torch.Tensor): Input tensor for gradData.
-            matrixData (torch.Tensor): Input tensor for matrixData.
 
         Returns:
             tuple: A tuple containing the following loss values:
                 - lossData (torch.Tensor): Loss value for data.
                 - lossGradient (torch.Tensor): Loss value for gradient.
                 - residualInt (torch.Tensor): Residual value for the Hamilton-Jacobi equation.
-                - lossMatrix (torch.Tensor): Loss value for matrix.
         """
         residualInt = torch.tensor([0]).float().to(self.device)
         lossData = torch.tensor([0]).float().to(self.device)
@@ -115,8 +113,15 @@ class HamiltonJacobiBellman(ABC):
         return lossData, lossGradient, residualInt
 
     def evaluationFunction(self, yEvaluation):
-        """Evaluate the performance on out of sample points."""
+        """
+        Evaluate the performance on out of sample points.
 
+        Parameters:
+        - yEvaluation: Tensor containing the predicted values for the out of sample points.
+
+        Returns:
+        - meanSquaredError: Mean squared error between the predicted values and the true values.
+        """
         # For two steps training, we need to remove the z-shift
         if self.correctShift:
             yEvaluation -= yEvaluation.min()
@@ -135,6 +140,9 @@ class HamiltonJacobiBellman(ABC):
             + self.computeLxTerm(x)
         )
 
+    def _getDataPoints(self, dataPointCount):
+        return self.dataSampler.samplePoints(dataPointCount)
+
     @abstractmethod
     def computeFxTerm(self, x, gradV):
         pass
@@ -145,10 +153,6 @@ class HamiltonJacobiBellman(ABC):
 
     @abstractmethod
     def computeLxTerm(self, x):
-        pass
-
-    @abstractmethod
-    def dataMatrixFunction(self, x):
         pass
 
     @abstractmethod
@@ -167,26 +171,41 @@ class HamiltonJacobiBellman(ABC):
     def groundTruthSolution(self):
         pass
 
-    @abstractmethod
-    def getDataPoints(self, dataPointCount):
-        return self.dataSampler.samplePoints(dataPointCount)
-
 
 class LinearQuadraticRegulator(HamiltonJacobiBellman):
-    """The problem is:
-    y' = Ay + Bu
-    J = int 1/2 y^T Q y  + 1/2 u^T R u
+    """Represents a linear quadratic regulator problem.
 
-    The correspondance with the HJB problem is:
+    The problem is defined by the following dynamics:
+    y' = Ay + Bu
+
+    The cost functional is defined as:
+    J = 1/2 y^T Q y + 1/2 u^T R u
+
+    The correspondance with the Hamilton-Jacobi-Bellman (HJB) problem is:
     f(y) = Ay
     g(y) = B
     l(y) = 1/2 y^T Q y
     beta ||u||^2 = 1/2 u^T R u
 
-    R is not a parameter, instead beta=0.5
+    Attributes:
+        network (object): The neural network used for solving the HJB equation.
+        gamma (float): The discount factor.
+        dim (int): The dimension of the system.
+        correctShift (bool): Flag indicating whether to apply a correction shift.
+
     """
 
     def __init__(self, network, gamma, dim, correctShift=False):
+        """Initializes the LinearQuadraticRegulator class.
+
+        Args:
+            network (object): The neural network used for solving the HJB equation.
+            gamma (float): The discount factor.
+            dim (int): The dimension of the system.
+            correctShift (bool, optional): Flag indicating whether to apply a correction shift.
+                Defaults to False.
+
+        """
         self.dim = dim
         domain = [(-1, 1)] * self.dim
         HamiltonJacobiBellman.__init__(
@@ -202,6 +221,16 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         self.Q = torch.eye(dim).to(self.device)
 
     def computeFxTerm(self, x, gradV):
+        """Computes the f(x) term in the HJB equation.
+
+        Args:
+            x (torch.Tensor): The state variable.
+            gradV (torch.Tensor): The gradient of the value function.
+
+        Returns:
+            torch.Tensor: The computed f(x) term.
+
+        """
         productFx = (
             torch.einsum("ni, ij, nj -> n", gradV, self.A, x)
             .reshape(-1, 1)
@@ -210,6 +239,15 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         return productFx
 
     def computeGxTerm(self, gradV):
+        """Computes the g(x) term in the HJB equation.
+
+        Args:
+            gradV (torch.Tensor): The gradient of the value function.
+
+        Returns:
+            torch.Tensor: The computed g(x) term.
+
+        """
         productGx = (
             -1.0
             / (4 * self.beta)
@@ -220,12 +258,30 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         return productGx
 
     def computeLxTerm(self, x):
+        """Computes the l(x) term in the HJB equation.
+
+        Args:
+            x (torch.Tensor): The state variable.
+
+        Returns:
+            torch.Tensor: The computed l(x) term.
+
+        """
         productLx = 0.5 * torch.einsum("ni, ij, nj -> n", x, self.Q, x).reshape(
             -1, 1
         ).to(self.device)
         return productLx
 
     def dataValueFunction(self, x):
+        """Computes the value function for a given state variable.
+
+        Args:
+            x (torch.Tensor): The state variable.
+
+        Returns:
+            torch.Tensor: The computed value function.
+
+        """
         alpha1 = 1.0 / 5 * (1 + np.sqrt(6))
         P = alpha1 * torch.eye(n=self.dim).to(self.device)
         productValueFunction = 0.5 * torch.einsum("ni, ij, nj -> n", x, P, x).reshape(
@@ -234,6 +290,15 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         return productValueFunction
 
     def dataValueFunctionDerivative(self, x):
+        """Computes the derivative of the value function for a given state variable.
+
+        Args:
+            x (torch.Tensor): The state variable.
+
+        Returns:
+            torch.Tensor: The computed derivative of the value function.
+
+        """
         alpha1 = 1.0 / 5 * (1 + np.sqrt(6))
         P = alpha1 * torch.eye(n=self.dim).to(self.device)
         productValueFunctionDerivative = torch.einsum("ij, nj -> ni", P, x).to(
@@ -241,44 +306,96 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         )
         return productValueFunctionDerivative
 
-    def dataMatrixFunction(self, x):
-        alpha1 = 1.0 / 5 * (1 + np.sqrt(6))
-        P = alpha1 * torch.eye(n=self.dim)
-        inds = np.triu_indices(self.dim)
-        return P[inds].repeat(x.shape[0], 1)
-
     def groundTruthSolution(self, xEvaluation):
+        """Computes the ground truth solution for a given state variable.
+
+        Args:
+            xEvaluation (torch.Tensor): The state variable.
+
+        Returns:
+            torch.Tensor: The computed ground truth solution.
+
+        """
         groundTruth = self.dataValueFunction(xEvaluation).reshape(-1, 1)
         return groundTruth
 
+    def getEvaluationPoints(self):
+        raise NotImplementedError
+
 
 class LinearQuadraticRegulator2D(LinearQuadraticRegulator):
+    """
+    A class representing a 2D linear quadratic regulator.
+
+    Args:
+        network (object): The network object used for the regulator.
+        gamma (float): The discount factor.
+        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
+    """
+
     def __init__(self, network, gamma, correctShift=False):
         LinearQuadraticRegulator.__init__(
             self, network, gamma, dim=2, correctShift=correctShift
         )
 
     def getEvaluationPoints(self):
+        """
+        Returns the evaluation points for the regulator.
+
+        Returns:
+            list: The evaluation points.
+        """
         return self.dataSampler.sampleGrid(nPoint=100)
 
 
 class LinearQuadraticRegulator10D(LinearQuadraticRegulator):
+    """
+    A class representing a linear quadratic regulator for a 10-dimensional system.
+
+    Args:
+        network (object): The network object used for the regulator.
+        gamma (float): The discount factor.
+        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
+    """
+
     def __init__(self, network, gamma, correctShift=False):
         LinearQuadraticRegulator.__init__(
             self, network, gamma, dim=10, correctShift=correctShift
         )
 
     def getEvaluationPoints(self):
+        """
+        Returns the evaluation points for the regulator.
+
+        Returns:
+            list: A list of evaluation points.
+        """
         return self.dataSampler.samplePoints(pointCount=10000)
 
 
 class LinearQuadraticRegulatorND(LinearQuadraticRegulator):
+    """
+    A class representing a linear quadratic regulator for a system with multiple dimensions.
+
+    Args:
+        network (object): The network object used for the regulator.
+        gamma (float): The discount factor.
+        dim (int): The number of dimensions in the system.
+        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
+    """
+
     def __init__(self, network, gamma, dim, correctShift=False):
         LinearQuadraticRegulator.__init__(
             self, network, gamma, dim, correctShift=correctShift
         )
 
     def getEvaluationPoints(self):
+        """
+        Returns the evaluation points for the regulator.
+
+        Returns:
+            list: The evaluation points.
+        """
         return self.dataSampler.samplePoints(pointCount=10000)
 
 
