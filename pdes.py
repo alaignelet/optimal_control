@@ -92,10 +92,12 @@ class HamiltonJacobiBellman(ABC):
         lossData = torch.tensor([0]).float().to(self.device)
         lossGradient = torch.tensor([0]).float().to(self.device)
 
+        # Compute the residual on the interior points
         if self.gamma["residual"] > 0.0:
             equation = self._computeHamiltonJacobiEquation(xInt, gradInt)
             residualInt = torch.mean(equation**2).to(self.device)
 
+        # Compute the loss on the data points
         if self.gamma["data"] > 0.0:
             lossData = (
                 torch.mean((yData.double() - self.yTrue.double()) ** 2)
@@ -103,6 +105,7 @@ class HamiltonJacobiBellman(ABC):
                 .to(self.device)
             )
 
+        # Compute the loss on the gradient of the data points
         if self.gamma["gradient"] > 0.0:
             lossGradient = (
                 torch.mean((gradData.double() - self.gradTrue.double()) ** 2)
@@ -134,6 +137,16 @@ class HamiltonJacobiBellman(ABC):
         return meanSquaredError
 
     def _computeHamiltonJacobiEquation(self, x, gradV):
+        """
+        Computes the Hamilton-Jacobi equation for a given state `x` and gradient `gradV`.
+
+        Parameters:
+            x (float): The state value.
+            gradV (float): The gradient of the value function.
+
+        Returns:
+            float: The computed Hamilton-Jacobi equation value.
+        """
         return (
             self.computeGxTerm(gradV)
             + self.computeFxTerm(x, gradV)
@@ -141,6 +154,15 @@ class HamiltonJacobiBellman(ABC):
         )
 
     def _getDataPoints(self, dataPointCount):
+        """
+        Returns a list of data points sampled from the data sampler.
+
+        Parameters:
+        - dataPointCount (int): The number of data points to sample.
+
+        Returns:
+        - list: A list of data points sampled from the data sampler.
+        """
         return self.dataSampler.samplePoints(dataPointCount)
 
     @abstractmethod
