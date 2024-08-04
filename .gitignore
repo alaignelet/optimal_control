@@ -31,3 +31,8 @@ tests/__pycache__/test_generateData.cpython-311.pyc
 tests/__pycache__/test_neuralNet.cpython-311.pyc
 __pycache__/utils.cpython-311.pyc
 .venv/
+__pycache__/generateData.cpython-310.pyc
+__pycache__/neuralNet.cpython-310.pyc
+__pycache__/pdes.cpython-310.pyc
+__pycache__/utils.cpython-310.pyc
+tests/__pycache__/test_generateData.cpython-310.pyc
