@@ -3,6 +3,32 @@ from torch import nn
 from abc import ABC, abstractmethod
 import math
 
+ACTIVATION_FUNCTIONS = {
+    "elu": nn.ELU(),
+    "hardshrink": nn.Hardshrink(),
+    "hardtanh": nn.Hardtanh(),
+    "leakyrelu": nn.LeakyReLU(),
+    "logsigmoid": nn.LogSigmoid(),
+    "prelu": nn.PReLU(),
+    "relu": nn.ReLU(),
+    "relu6": nn.ReLU6(),
+    "rrelu": nn.RReLU(),
+    "selu": nn.SELU(),
+    "celu": nn.CELU(),
+    "gelu": nn.GELU(),
+    "sigmoid": nn.Sigmoid(),
+    "silu": nn.SiLU(),
+    "mish": nn.Mish(),
+    "softplus": nn.Softplus(),
+    "softshrink": nn.Softshrink(),
+    "softsign": nn.Softsign(),
+    "tanh": nn.Tanh(),
+    "tanhshrink": nn.Tanhshrink(),
+    "softmin": nn.Softmin(),
+    "softmax": nn.Softmax(),
+    "logsoftmax": nn.LogSoftmax(),
+}
+
 
 class Positivity(ABC):
     """Interface for function that makes weights positive."""
@@ -272,7 +298,11 @@ class LinearSkip(nn.Module):
 
 
 def get_model(
-    name: str, num_hidden: int = 32, bad_init: bool = False, skip: bool = False
+    name: str,
+    num_hidden: int = 32,
+    bad_init: bool = False,
+    skip: bool = False,
+    activation: str = "elu",
 ):
     num_in, num_out = 2, 1
     if name == "logreg":
@@ -289,9 +319,9 @@ def get_model(
 
     model = nn.Sequential(
         nn.Linear(num_in, num_hidden),
-        nn.ELU(),
+        ACTIVATION_FUNCTIONS[activation],
         ConvexLinear(num_hidden, num_hidden, positivity=positivity),
-        nn.ELU(),
+        ACTIVATION_FUNCTIONS[activation],
         ConvexLinear(num_hidden, num_out, positivity=positivity),
     )
 
