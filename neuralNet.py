@@ -239,8 +239,6 @@ class MatrixNeuralNet(BaseNeuralNet):
 
     def __init__(self, layers):
         super(MatrixNeuralNet, self).__init__(layers)
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.layers = layers
         self.model = self._buildModel(layers).to(self.device)
 
     def computeValueFunction(self, x):
@@ -270,3 +268,36 @@ class MatrixNeuralNet(BaseNeuralNet):
         ).reshape(-1, 1).to(self.device)
 
         return valueFunction
+
+
+class ConvexNeuralNet(BaseNeuralNet):
+    """
+    A neural network model for computing the value function and evaluating convex functions.
+
+    Args:
+        layers (list): List of integers representing the number of units in each layer.
+
+    Attributes:
+        device (str): The device to be used for computation (e.g., "cuda:0" or "cpu").
+        layers (list): List of integers representing the number of units in each layer.
+        model (torch.nn.Module): The neural network model.
+
+    Methods:
+        computeValueFunction: Computes the value function using the neural network model.
+    """
+
+    def __init__(self, layers, convexModel):
+        super(ConvexNeuralNet, self).__init__(layers)
+        self.model = convexModel.to(self.device)
+
+    def computeValueFunction(self, x):
+        """
+        Computes the value function using the neural network model.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Computed value function.
+        """
+        return self._directValueFunction(x)
