@@ -289,9 +289,9 @@ def get_model(
 
     model = nn.Sequential(
         nn.Linear(num_in, num_hidden),
-        nn.ReLU(),
+        nn.ELU(),
         ConvexLinear(num_hidden, num_hidden, positivity=positivity),
-        nn.ReLU(),
+        nn.ELU(),
         ConvexLinear(num_hidden, num_out, positivity=positivity),
     )
 
