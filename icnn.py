@@ -307,7 +307,6 @@ def get_model(
     num_in, num_out = 2, 1
     if name == "logreg":
         return nn.Linear(num_in, num_out)
-
     if name == "fc":
         positivity = NoPositivity()
     elif name == "convex":
