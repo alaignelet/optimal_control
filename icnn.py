@@ -297,16 +297,49 @@ class LinearSkip(nn.Module):
         nn.init.zeros_(self.skip.bias)
 
 
+def _buildLayers(layers, activation, positivity):
+    """
+    Builds the layers of the neural network.
+
+    Args:
+        layers (list): List of integers representing the number of units in each layer.
+
+    Returns:
+        list: List of neural network layers.
+    """
+
+    # input layer: Linear
+    neuralNetLayers = [
+        nn.Linear(in_features=layers[0], out_features=layers[1]),
+        ACTIVATION_FUNCTIONS[activation],
+    ]
+
+    # all convex layers
+    for i in range(1, len(layers) - 2):
+        neuralNetLayers.append(
+            ConvexLinear(
+                in_features=layers[i], out_features=layers[i + 1], positivity=positivity
+            )
+        )
+        neuralNetLayers.append(ACTIVATION_FUNCTIONS[activation])
+
+    # output convex layer
+    neuralNetLayers.append(
+        ConvexLinear(
+            in_features=layers[-2], out_features=layers[-1], positivity=positivity
+        )
+    )
+    return neuralNetLayers
+
+
 def get_model(
     name: str,
-    num_hidden: int = 32,
+    layers: list[int],
     bad_init: bool = False,
     skip: bool = False,
     activation: str = "elu",
 ):
-    num_in, num_out = 2, 1
-    if name == "logreg":
-        return nn.Linear(num_in, num_out)
+
     if name == "fc":
         positivity = NoPositivity()
     elif name == "convex":
@@ -316,13 +349,15 @@ def get_model(
     else:
         raise ValueError(f"unknown model name: {name}")
 
-    model = nn.Sequential(
-        nn.Linear(num_in, num_hidden),
-        ACTIVATION_FUNCTIONS[activation],
-        ConvexLinear(num_hidden, num_hidden, positivity=positivity),
-        ACTIVATION_FUNCTIONS[activation],
-        ConvexLinear(num_hidden, num_out, positivity=positivity),
-    )
+    model = nn.Sequential(*_buildLayers(layers, activation, positivity))
+
+    # model = nn.Sequential(
+    #     nn.Linear(num_in, num_hidden),
+    #     ACTIVATION_FUNCTIONS[activation],
+    #     ConvexLinear(num_hidden, num_hidden, positivity=positivity),
+    #     ACTIVATION_FUNCTIONS[activation],
+    #     ConvexLinear(num_hidden, num_out, positivity=positivity),
+    # )
 
     init = (
         TraditionalInitialiser(gain=2.0)

@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
 import logging
+from torch.utils.tensorboard import SummaryWriter
 
 # Set up logger
 logger = logging.getLogger("training")
@@ -28,6 +29,7 @@ class BaseNeuralNet(nn.Module, ABC):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.layers = layers
         self.model = self._buildModel(layers)
+        self.writer = SummaryWriter()
 
     def _buildModel(self, layers):
         """
@@ -95,6 +97,9 @@ class BaseNeuralNet(nn.Module, ABC):
         xInt = feedDict["xInt"].to(self.device)
         xData = feedDict["xData"].to(self.device)
 
+        # Log the model architecture using xData as the input example
+        self.writer.add_graph(self.model, xData)
+
         # Placholder for gradients of interior points
         gradInt = torch.zeros(xInt.shape).to(self.device)
 
@@ -139,6 +144,19 @@ class BaseNeuralNet(nn.Module, ABC):
                 loss.backward()
                 self.optimizer.step()
 
+                # Log losses to TensorBoard
+                self.writer.add_scalar("Loss/Total", loss.item(), epochTotal)
+                self.writer.add_scalar("Loss/Data", lossData.item(), epochTotal)
+                self.writer.add_scalar("Loss/Gradient", lossGrad.item(), epochTotal)
+                self.writer.add_scalar("Loss/Residual", lossResidual.item(), epochTotal)
+
+                # Log weights and biases to TensorBoard
+                for name, param in self.model.named_parameters():
+                    self.writer.add_histogram(f"Weights/{name}", param, epochTotal)
+                    # self.writer.add_histogram(
+                    #     f"Gradients/{name}_grad", param.grad, epochTotal
+                    # )
+
                 # Print training logs
                 if epochTotal % 1000 == 0:
                     logger.info(
@@ -156,6 +174,8 @@ class BaseNeuralNet(nn.Module, ABC):
                     "loss": loss.detach().cpu().numpy().item(),
                 }
                 info.append(info_dict)
+
+        self.writer.close()
 
         return pd.DataFrame(info)
 
@@ -268,6 +288,38 @@ class MatrixNeuralNet(BaseNeuralNet):
         ).reshape(-1, 1).to(self.device)
 
         return valueFunction
+
+
+class LinearNeuralNet(BaseNeuralNet):
+    """
+    A neural network model for computing the value function and evaluating convex functions.
+
+    Args:
+        layers (list): List of integers representing the number of units in each layer.
+
+    Attributes:
+        device (str): The device to be used for computation (e.g., "cuda:0" or "cpu").
+        layers (list): List of integers representing the number of units in each layer.
+
+    Methods:
+        computeValueFunction: Computes the value function using the neural network model.
+    """
+
+    def __init__(self, layers):
+        super(LinearNeuralNet, self).__init__(layers)
+        self.model = self._buildModel(layers).to(self.device)
+
+    def computeValueFunction(self, x):
+        """
+        Computes the value function using the neural network model.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Computed value function.
+        """
+        return self._directValueFunction(x)
 
 
 class ConvexNeuralNet(BaseNeuralNet):
