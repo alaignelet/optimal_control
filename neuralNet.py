@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
+from icnn import ConvexLinear
+from enums import ActivationFunctionEnum, PositivityFunctionEnum, InitFunctionEnum
 import logging
 from torch.utils.tensorboard import SummaryWriter
 
@@ -11,61 +13,43 @@ logger = logging.getLogger("training")
 
 
 class BaseNeuralNet(nn.Module, ABC):
-
+    @abstractmethod
     def __init__(self, layers):
         """
-        Initializes a BaseNeuralNet object.
-
+        Abstract initializer for BaseNeuralNet.
         Args:
             layers (list): A list of integers representing the number of neurons in each layer.
-
-        Attributes:
-            device (str): The device on which the model will be trained (either "cuda:0" if CUDA is available, or "cpu").
-            layers (list): A list of integers representing the number of neurons in each layer.
-            model: The neural network model built using the specified layers.
-
         """
         super(BaseNeuralNet, self).__init__()
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.layers = layers
-        self.model = self._buildModel(layers)
         self.writer = SummaryWriter()
 
+    @abstractmethod
+    def _buildLayers(self, layers):
+        """
+        Abstract method to build the layers of the neural network.
+        Args:
+            layers (list): A list of integers representing the number of neurons in each layer.
+        """
+        pass
+
+    @abstractmethod
     def _buildModel(self, layers):
         """
-        Builds a neural network model based on the given layers.
-
+        Abstract method to build the model. This must be implemented by subclasses.
         Args:
-            layers (list): A list of layer sizes for the neural network.
-
-        Returns:
-            nn.Sequential: The built neural network model.
+            layers (list): A list of integers representing the number of neurons in each layer.
         """
-        neuralNetLayers = self._buildLayers(layers)
-        neuralNetModel = nn.Sequential(*neuralNetLayers)
-        neuralNetModel = neuralNetModel.apply(self._weightInitialisation)
-        return neuralNetModel
+        pass
 
-    def partialDerivative(self, tensorToDerive, x):
+    @abstractmethod
+    def computeValueFunction(self, x):
         """
-        Compute the partial derivative of `tensorToDerive` with respect to `x`.
-
+        Abstract method to compute the value function. This must be implemented by subclasses.
         Args:
-            tensorToDerive (torch.Tensor): The tensor to compute the derivative of.
-            x (torch.Tensor): The input tensor with respect to which the derivative is computed.
-
-        Returns:
-            torch.Tensor: The computed partial derivative.
-
+            x (torch.Tensor): Input tensor.
         """
-        grad = torch.autograd.grad(
-            outputs=tensorToDerive,
-            inputs=x,
-            grad_outputs=torch.ones_like(tensorToDerive),
-            create_graph=True,
-        )[0]
-
-        return grad
+        pass
 
     def train(self, feedDict, lrs, iterations):
         """
@@ -125,11 +109,11 @@ class BaseNeuralNet(nn.Module, ABC):
                     yData = self.computeValueFunction(xData)
 
                 if gamma["gradient"] > 0.0:
-                    gradData = self.computeValueFunctionDerivative(xData)
+                    gradData = self._computeValueFunctionDerivative(xData)
 
                 # Compute residuals for interior points
                 if gamma["residual"] > 0.0:
-                    gradInt = self.computeValueFunctionDerivative(xInt)
+                    gradInt = self._computeValueFunctionDerivative(xInt)
 
                 # Compute loss and backpropagate
                 lossData, lossGrad, lossResidual = lossFunction(
@@ -179,7 +163,28 @@ class BaseNeuralNet(nn.Module, ABC):
 
         return pd.DataFrame(info)
 
-    def computeValueFunctionDerivative(self, x):
+    def _partialDerivative(self, tensorToDerive, x):
+        """
+        Compute the partial derivative of `tensorToDerive` with respect to `x`.
+
+        Args:
+            tensorToDerive (torch.Tensor): The tensor to compute the derivative of.
+            x (torch.Tensor): The input tensor with respect to which the derivative is computed.
+
+        Returns:
+            torch.Tensor: The computed partial derivative.
+
+        """
+        grad = torch.autograd.grad(
+            outputs=tensorToDerive,
+            inputs=x,
+            grad_outputs=torch.ones_like(tensorToDerive),
+            create_graph=True,
+        )[0]
+
+        return grad
+
+    def _computeValueFunctionDerivative(self, x):
         """
         Computes the derivative of the value function with respect to the input tensor x.
 
@@ -190,7 +195,7 @@ class BaseNeuralNet(nn.Module, ABC):
         - The derivative of the value function with respect to x.
         """
         valueFunction = self.computeValueFunction(x)
-        return self.partialDerivative(tensorToDerive=valueFunction, x=x)
+        return self._partialDerivative(tensorToDerive=valueFunction, x=x)
 
     def _directValueFunction(self, x):
         """
@@ -203,6 +208,39 @@ class BaseNeuralNet(nn.Module, ABC):
         - The value function output by the network.
         """
         return self.model(x)
+
+
+class LinearNeuralNet(BaseNeuralNet):
+    def __init__(self, layers):
+        super(LinearNeuralNet, self).__init__(layers)
+        self.model = self._buildModel(layers)
+
+    def computeValueFunction(self, x):
+        """
+        Computes the value function using the neural network model.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Computed value function.
+        """
+        return self._directValueFunction(x)
+
+    def _buildModel(self, layers):
+        """
+        Builds a neural network model based on the given layers.
+
+        Args:
+            layers (list): A list of layer sizes for the neural network.
+
+        Returns:
+            nn.Sequential: The built neural network model.
+        """
+        neuralNetLayers = self._buildLayers(layers)
+        neuralNetModel = nn.Sequential(*neuralNetLayers)
+        neuralNetModel = neuralNetModel.apply(self._weightInitialisation)
+        return neuralNetModel
 
     def _buildLayers(self, layers):
         """
@@ -236,12 +274,83 @@ class BaseNeuralNet(nn.Module, ABC):
         if type(layer) == nn.Linear:
             torch.nn.init.xavier_normal_(layer.weight)
 
-    @abstractmethod
+
+class ConvexNeuralNet(BaseNeuralNet):
+    def __init__(self, layers, activation, positivity, init):
+        super(ConvexNeuralNet, self).__init__(layers)
+        self.model = self._buildModel(layers, activation, positivity, init)
+
     def computeValueFunction(self, x):
-        pass
+        """
+        Computes the value function using the neural network model.
+
+        Args:
+            x (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Computed value function.
+        """
+        return self._directValueFunction(x)
+
+    def _buildModel(self, layers, activation, positivity, init):
+        """
+        Builds a neural network model based on the given layers.
+
+        Args:
+            layers (list): A list of layer sizes for the neural network.
+
+        Returns:
+            nn.Sequential: The built neural network model.
+        """
+
+        model = nn.Sequential(*self._buildLayers(layers, activation, positivity))
+
+        for idx in range(len(model)):
+            if isinstance(model[idx], ConvexLinear):
+                init.value(model[idx].weight, model[idx].bias)
+
+        return model
+
+    def _buildLayers(self, layers, activation, positivity):
+        """
+        Builds the layers of the neural network.
+
+        Args:
+            layers (list): List of integers representing the number of units in each layer.
+
+        Returns:
+            list: List of neural network layers.
+        """
+
+        # input layer: Linear
+        neuralNetLayers = [
+            nn.Linear(in_features=layers[0], out_features=layers[1]),
+            activation.value,
+        ]
+
+        # all convex layers
+        for i in range(1, len(layers) - 2):
+            neuralNetLayers.append(
+                ConvexLinear(
+                    in_features=layers[i],
+                    out_features=layers[i + 1],
+                    positivity=positivity.value,
+                )
+            )
+            neuralNetLayers.append(activation.value)
+
+        # output convex layer
+        neuralNetLayers.append(
+            ConvexLinear(
+                in_features=layers[-2],
+                out_features=layers[-1],
+                positivity=positivity.value,
+            )
+        )
+        return neuralNetLayers
 
 
-class MatrixNeuralNet(BaseNeuralNet):
+class MatrixLinearNeuralNet(LinearNeuralNet):
     """
     A neural network model for computing the value function and evaluating matrices.
 
@@ -258,8 +367,7 @@ class MatrixNeuralNet(BaseNeuralNet):
     """
 
     def __init__(self, layers):
-        super(MatrixNeuralNet, self).__init__(layers)
-        self.model = self._buildModel(layers).to(self.device)
+        super(MatrixLinearNeuralNet, self).__init__(layers)
 
     def computeValueFunction(self, x):
         """
@@ -290,24 +398,11 @@ class MatrixNeuralNet(BaseNeuralNet):
         return valueFunction
 
 
-class LinearNeuralNet(BaseNeuralNet):
-    """
-    A neural network model for computing the value function and evaluating convex functions.
-
-    Args:
-        layers (list): List of integers representing the number of units in each layer.
-
-    Attributes:
-        device (str): The device to be used for computation (e.g., "cuda:0" or "cpu").
-        layers (list): List of integers representing the number of units in each layer.
-
-    Methods:
-        computeValueFunction: Computes the value function using the neural network model.
-    """
-
-    def __init__(self, layers):
-        super(LinearNeuralNet, self).__init__(layers)
-        self.model = self._buildModel(layers).to(self.device)
+class MatrixConvexNeuralNet(ConvexNeuralNet):
+    def __init__(self, layers, activation, positivity, init):
+        super(MatrixConvexNeuralNet, self).__init__(
+            layers, activation, positivity, init
+        )
 
     def computeValueFunction(self, x):
         """
@@ -319,37 +414,20 @@ class LinearNeuralNet(BaseNeuralNet):
         Returns:
             torch.Tensor: Computed value function.
         """
-        return self._directValueFunction(x)
+        dim = x.shape[1]
 
+        stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
+        outputModel = self.model(x)
 
-class ConvexNeuralNet(BaseNeuralNet):
-    """
-    A neural network model for computing the value function and evaluating convex functions.
+        inds = np.triu_indices(dim)
+        k = 0
+        for i, j in zip(inds[0], inds[1]):
+            stackedMatrices[:, i, j] = outputModel[:, k]
+            stackedMatrices[:, j, i] = outputModel[:, k]
+            k += 1
 
-    Args:
-        layers (list): List of integers representing the number of units in each layer.
+        valueFunction = 0.5 * torch.einsum(
+            "ni, nij, nj -> n", x, stackedMatrices, x
+        ).reshape(-1, 1).to(self.device)
 
-    Attributes:
-        device (str): The device to be used for computation (e.g., "cuda:0" or "cpu").
-        layers (list): List of integers representing the number of units in each layer.
-        model (torch.nn.Module): The neural network model.
-
-    Methods:
-        computeValueFunction: Computes the value function using the neural network model.
-    """
-
-    def __init__(self, layers, convexModel):
-        super(ConvexNeuralNet, self).__init__(layers)
-        self.model = convexModel.to(self.device)
-
-    def computeValueFunction(self, x):
-        """
-        Computes the value function using the neural network model.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-
-        Returns:
-            torch.Tensor: Computed value function.
-        """
-        return self._directValueFunction(x)
+        return valueFunction
