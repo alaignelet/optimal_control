@@ -51,7 +51,7 @@ class BaseNeuralNet(nn.Module, ABC):
         """
         pass
 
-    def train(self, feedDict, lrs, iterations):
+    def train(self, feedDict, lrs, iterations, logTensorboard=False):
         """
         Trains the neural network model.
 
@@ -129,17 +129,20 @@ class BaseNeuralNet(nn.Module, ABC):
                 self.optimizer.step()
 
                 # Log losses to TensorBoard
-                self.writer.add_scalar("Loss/Total", loss.item(), epochTotal)
-                self.writer.add_scalar("Loss/Data", lossData.item(), epochTotal)
-                self.writer.add_scalar("Loss/Gradient", lossGrad.item(), epochTotal)
-                self.writer.add_scalar("Loss/Residual", lossResidual.item(), epochTotal)
+                if logTensorboard:
+                    self.writer.add_scalar("Loss/Total", loss.item(), epochTotal)
+                    self.writer.add_scalar("Loss/Data", lossData.item(), epochTotal)
+                    self.writer.add_scalar("Loss/Gradient", lossGrad.item(), epochTotal)
+                    self.writer.add_scalar(
+                        "Loss/Residual", lossResidual.item(), epochTotal
+                    )
 
-                # Log weights and biases to TensorBoard
-                for name, param in self.model.named_parameters():
-                    self.writer.add_histogram(f"Weights/{name}", param, epochTotal)
-                    # self.writer.add_histogram(
-                    #     f"Gradients/{name}_grad", param.grad, epochTotal
-                    # )
+                    # Log weights and biases to TensorBoard
+                    for name, param in self.model.named_parameters():
+                        self.writer.add_histogram(f"Weights/{name}", param, epochTotal)
+                        # self.writer.add_histogram(
+                        #     f"Gradients/{name}_grad", param.grad, epochTotal
+                        # )
 
                 # Print training logs
                 if epochTotal % 1000 == 0:
