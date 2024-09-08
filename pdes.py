@@ -3,7 +3,12 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 import torch
+import os
 from generateData import GenerateData
+
+
+# need to refactor with 2 different classes with bespoke train methods. One uses the true solution, while the other doesnt use.
+# the true solution is used to compute the loss on the evaluation points
 
 
 class HamiltonJacobiBellman(ABC):
@@ -345,56 +350,6 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         raise NotImplementedError
 
 
-class LinearQuadraticRegulator2D(LinearQuadraticRegulator):
-    """
-    A class representing a 2D linear quadratic regulator.
-
-    Args:
-        network (object): The network object used for the regulator.
-        gamma (float): The discount factor.
-        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
-    """
-
-    def __init__(self, network, gamma, correctShift=False):
-        LinearQuadraticRegulator.__init__(
-            self, network, gamma, dim=2, correctShift=correctShift
-        )
-
-    def getEvaluationPoints(self):
-        """
-        Returns the evaluation points for the regulator.
-
-        Returns:
-            list: The evaluation points.
-        """
-        return self.dataSampler.sampleGrid(nPoint=100)
-
-
-class LinearQuadraticRegulator10D(LinearQuadraticRegulator):
-    """
-    A class representing a linear quadratic regulator for a 10-dimensional system.
-
-    Args:
-        network (object): The network object used for the regulator.
-        gamma (float): The discount factor.
-        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
-    """
-
-    def __init__(self, network, gamma, correctShift=False):
-        LinearQuadraticRegulator.__init__(
-            self, network, gamma, dim=10, correctShift=correctShift
-        )
-
-    def getEvaluationPoints(self):
-        """
-        Returns the evaluation points for the regulator.
-
-        Returns:
-            list: A list of evaluation points.
-        """
-        return self.dataSampler.samplePoints(pointCount=10000)
-
-
 class LinearQuadraticRegulatorND(LinearQuadraticRegulator):
     """
     A class representing a linear quadratic regulator for a system with multiple dimensions.
@@ -418,7 +373,27 @@ class LinearQuadraticRegulatorND(LinearQuadraticRegulator):
         Returns:
             list: The evaluation points.
         """
-        return self.dataSampler.samplePoints(pointCount=10000)
+        return (
+            self.dataSampler.sampleGrid(nPoint=100)
+            if self.dim <= 2
+            else self.dataSampler.samplePoints(pointCount=10000)
+        )
+
+
+class LinearQuadraticRegulator2D(LinearQuadraticRegulatorND):
+    """
+    A class representing a 2D linear quadratic regulator.
+
+    Args:
+        network (object): The network object used for the regulator.
+        gamma (float): The discount factor.
+        correctShift (bool, optional): Whether to correct the shift. Defaults to False.
+    """
+
+    def __init__(self, network, gamma, correctShift=False):
+        LinearQuadraticRegulatorND.__init__(
+            self, network, gamma, dim=2, correctShift=correctShift
+        )
 
 
 class NonLinear(HamiltonJacobiBellman):
@@ -440,7 +415,14 @@ class NonLinear(HamiltonJacobiBellman):
 
     """
 
-    def __init__(self, network, gamma, correctShift=False, dim=2, eps=1.0):
+    def __init__(
+        self,
+        network,
+        gamma,
+        dim,
+        eps,
+        correctShift=False,
+    ):
         domain = [(-1, 1)] * dim
         HamiltonJacobiBellman.__init__(
             self,
@@ -547,35 +529,41 @@ class NonLinear(HamiltonJacobiBellman):
 
         return stackedVectors
 
-        # stackedMatrices = torch.zeros((x.shape[0], x.shape[1], x.shape[1])).to(self.device)
-
-        # p12 = lambda x: x**2 + torch.sqrt(x**4 + 1)
-        # p22 = lambda x: torch.sqrt( 1 + 2*p12(x) )
-        # p11 = lambda x: (torch.sqrt(x**4 + 1)) * p22(x)
-
-        # stackedMatrices[:, 0, 0] = p11( x[:, 0] )
-        # stackedMatrices[:, 0, 1] = p12( x[:, 0] )
-        # stackedMatrices[:, 1, 0] = p12( x[:, 0] )
-        # stackedMatrices[:, 1, 1] = p22( x[:, 0] )
-
-        # gradV = torch.einsum('nij, nj -> ni', stackedMatrices, x)
-
-        # return gradV
-
-    def _loadTrueSolution(
-        self, solutionFilename="non_linear_true_solution/neural_net/non_linear_true.csv"
-    ):
-        trueSolution = pd.read_csv(solutionFilename).drop(columns="Unnamed: 0")
-        trueSolution = (
-            torch.tensor(trueSolution.to_numpy()).reshape(-1, 1).to(self.device)
-        )
-        return trueSolution
+    @abstractmethod
+    def _loadTrueSolution(self):
+        pass
 
     def groundTruthSolution(self, xEvaluation):
         return self.true_solution
 
     def getEvaluationPoints(self):
         return self.dataSampler.sampleGrid(nPoint=100)
+
+
+class NonLinear2D(NonLinear):
+
+    def __init__(self, network, gamma, correctShift=False):
+        self.inputsFolder = "inputs/non_linear_true_solution/neural_net"
+        NonLinear.__init__(
+            self,
+            network=network,
+            gamma=gamma,
+            correctShift=correctShift,
+            dim=2,
+            eps=1.0,
+        )
+
+    def _loadTrueSolution(self):
+        """Helper function to load the true solution from the csv file at instantiation.
+        This solution corresponds to the case eps=1.0.
+        """
+        trueSolution = pd.read_csv(
+            os.path.join(self.inputsFolder, "true_solution.csv")
+        ).drop(columns="Unnamed: 0")
+        trueSolution = (
+            torch.tensor(trueSolution.to_numpy()).reshape(-1, 1).to(self.device)
+        )
+        return trueSolution
 
 
 class CuckerSmale(HamiltonJacobiBellman):
@@ -587,6 +575,7 @@ class CuckerSmale(HamiltonJacobiBellman):
     def __init__(self, network, gamma, correctShift=False, dim=20):
         self.dim = dim
         self.domain = [(-3, 3)] * (2 * self.dim)
+        self.inputsFolder = "inputs/cucker_smale_data_solution"
         HamiltonJacobiBellman.__init__(
             self,
             network=network,
@@ -660,20 +649,19 @@ class CuckerSmale(HamiltonJacobiBellman):
         ).to(self.device)
         return productLx
 
-    def dataMatrixFunction(self, x):
-        dataMatrixFunction = np.loadtxt("matrixFunction.csv")
-        dataMatrixFunction = torch.tensor(dataMatrixFunction).to(self.device)
-        return dataMatrixFunction
-
     def dataValueFunction(self, x):
-        dataValueFunction = np.loadtxt("valueFunction.csv")
+        dataValueFunction = np.loadtxt(
+            os.path.join(self.inputsFolder, "value_function.csv")
+        )
         dataValueFunction = (
             torch.tensor(dataValueFunction).reshape(-1, 1).to(self.device)
         )
         return dataValueFunction
 
     def dataValueFunctionDerivative(self, x):
-        dataValueFunctionDerivative = np.loadtxt("valueFunctionDerivative.csv")
+        dataValueFunctionDerivative = np.loadtxt(
+            os.path.join(self.inputsFolder, "value_function_derivative.csv")
+        )
         dataValueFunctionDerivative = (
             torch.tensor(dataValueFunctionDerivative)
             .reshape(-1, 2 * self.dim)
@@ -682,7 +670,9 @@ class CuckerSmale(HamiltonJacobiBellman):
         return dataValueFunctionDerivative
 
     def getDataPoints(self, dataPointCount):
-        sampledPoints = np.loadtxt("sampledPoints.csv")
+        sampledPoints = np.loadtxt(
+            os.path.join(self.inputsFolder, "sampled_points.csv")
+        )
         sampledPoints = (
             torch.tensor(sampledPoints, requires_grad=True)
             .reshape(-1, 2 * self.dim)
@@ -691,8 +681,9 @@ class CuckerSmale(HamiltonJacobiBellman):
         )
         return sampledPoints[:dataPointCount]
 
-    def groundTruthSolution(self):
-        pass
+    def groundTruthSolution(self, xEvaluation):
+        """The ground truth solution is not available for this problem"""
+        return torch.tensor([0])
 
     def getEvaluationPoints(self):
-        pass
+        return self.dataSampler.samplePoints(pointCount=10000)

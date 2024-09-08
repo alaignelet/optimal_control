@@ -109,11 +109,11 @@ class BaseNeuralNet(nn.Module, ABC):
                     yData = self.computeValueFunction(xData)
 
                 if gamma["gradient"] > 0.0:
-                    gradData = self._computeValueFunctionDerivative(xData)
+                    gradData = self.computeValueFunctionDerivative(xData)
 
                 # Compute residuals for interior points
                 if gamma["residual"] > 0.0:
-                    gradInt = self._computeValueFunctionDerivative(xInt)
+                    gradInt = self.computeValueFunctionDerivative(xInt)
 
                 # Compute loss and backpropagate
                 lossData, lossGrad, lossResidual = lossFunction(
@@ -187,7 +187,7 @@ class BaseNeuralNet(nn.Module, ABC):
 
         return grad
 
-    def _computeValueFunctionDerivative(self, x):
+    def computeValueFunctionDerivative(self, x):
         """
         Computes the derivative of the value function with respect to the input tensor x.
 
