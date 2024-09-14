@@ -384,9 +384,9 @@ class LinearQuadraticRegulatorND(LinearQuadraticRegulator):
             list: The evaluation points.
         """
         return (
-            self.dataSampler.sampleGrid(nPoint=100)
+            self.dataSampler.sampleGrid(nPoint=100).to(self.device)
             if self.dim <= 2
-            else self.dataSampler.samplePoints(pointCount=10000)
+            else self.dataSampler.samplePoints(pointCount=10000).to(self.device)
         )
 
 
@@ -571,7 +571,7 @@ class NonLinear(HamiltonJacobiBellman):
         return self.true_solution
 
     def getEvaluationPoints(self):
-        return self.dataSampler.sampleGrid(nPoint=100)
+        return self.dataSampler.sampleGrid(nPoint=100).to(self.device)
 
 
 class NonLinear2D(NonLinear):
