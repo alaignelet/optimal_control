@@ -6,7 +6,6 @@ from abc import ABC, abstractmethod
 from icnn import ConvexLinear
 from enums import ActivationFunctionEnum, PositivityFunctionEnum, InitFunctionEnum
 import logging
-from torch.utils.tensorboard import SummaryWriter
 
 # Set up logger
 logger = logging.getLogger("training")
@@ -21,54 +20,28 @@ class BaseNeuralNet(nn.Module, ABC):
             layers (list): A list of integers representing the number of neurons in each layer.
         """
         super(BaseNeuralNet, self).__init__()
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.writer = SummaryWriter()
+        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
 
     @abstractmethod
     def _buildLayers(self, layers):
-        """
-        Abstract method to build the layers of the neural network.
-        Args:
-            layers (list): A list of integers representing the number of neurons in each layer.
-        """
         pass
 
     @abstractmethod
     def _buildModel(self, layers):
-        """
-        Abstract method to build the model. This must be implemented by subclasses.
-        Args:
-            layers (list): A list of integers representing the number of neurons in each layer.
-        """
         pass
 
     @abstractmethod
     def computeValueFunction(self, x):
-        """
-        Abstract method to compute the value function. This must be implemented by subclasses.
-        Args:
-            x (torch.Tensor): Input tensor.
-        """
         pass
 
-    def train(self, feedDict, lrs, iterations, logTensorboard=False):
+    def train(self, feedDict, lrs, iterations):
         """
         Trains the neural network model.
 
         Args:
             feedDict (dict): A dictionary containing the necessary input data for training.
-                - gamma (dict): A dictionary containing the weights for different loss components.
-                    - matrix (float): Weight for the matrix loss component.
-                    - data (float): Weight for the data loss component.
-                    - gradient (float): Weight for the gradient loss component.
-                    - residual (float): Weight for the residual loss component.
-                - lossFunction (function): A function that computes the loss given the input data.
-                - xInt (torch.Tensor): Tensor containing the interior points data for residual loss.
-                - xData (torch.Tensor): Tensor containing the data points for supervised learning.
-
             lrs (list): A list of learning rates to be used during training.
             iterations (list): A list of the number of iterations to be performed for each learning rate.
-            verbose (bool, optional): Whether to print training logs. Defaults to False.
 
         Returns:
             pandas.DataFrame: A DataFrame containing information about each epoch of training.
@@ -81,15 +54,16 @@ class BaseNeuralNet(nn.Module, ABC):
         xInt = feedDict["xInt"].to(self.device)
         xData = feedDict["xData"].to(self.device)
 
-        # Log the model architecture using xData as the input example
-        self.writer.add_graph(self.model, xData)
+        # Ensure xInt and xData are leaf tensors with requires_grad=True
+        xInt = xInt.clone().detach().requires_grad_(True)
+        xData = xData.clone().detach().requires_grad_(True)
 
-        # Placholder for gradients of interior points
-        gradInt = torch.zeros(xInt.shape).to(self.device)
+        # Placeholder for gradients of interior points
+        gradInt = torch.zeros_like(xInt, device=self.device)
 
         # Placeholder for data and gradients of data points
-        yData = torch.zeros((xData.shape[0], 1)).to(self.device)
-        gradData = torch.zeros(xData.shape).to(self.device)
+        yData = torch.zeros((xData.shape[0], 1), device=self.device)
+        gradData = torch.zeros_like(xData, device=self.device)
 
         epochTotal = 0
         info = []
@@ -125,24 +99,11 @@ class BaseNeuralNet(nn.Module, ABC):
                     + gamma["residual"] * lossResidual
                 )
                 self.optimizer.zero_grad()
-                loss.backward()
+
+                # Retain graph if needed
+                retain_graph = True if epoch < iteration - 1 else False
+                loss.backward(retain_graph=retain_graph)
                 self.optimizer.step()
-
-                # Log losses to TensorBoard
-                if logTensorboard:
-                    self.writer.add_scalar("Loss/Total", loss.item(), epochTotal)
-                    self.writer.add_scalar("Loss/Data", lossData.item(), epochTotal)
-                    self.writer.add_scalar("Loss/Gradient", lossGrad.item(), epochTotal)
-                    self.writer.add_scalar(
-                        "Loss/Residual", lossResidual.item(), epochTotal
-                    )
-
-                    # Log weights and biases to TensorBoard
-                    for name, param in self.model.named_parameters():
-                        self.writer.add_histogram(f"Weights/{name}", param, epochTotal)
-                        # self.writer.add_histogram(
-                        #     f"Gradients/{name}_grad", param.grad, epochTotal
-                        # )
 
                 # Print training logs
                 if epochTotal % 1000 == 0:
@@ -156,13 +117,10 @@ class BaseNeuralNet(nn.Module, ABC):
 
                 # Save training information
                 info_dict = {
-                    "xData": xData,
                     "epoch": epochTotal,
                     "loss": loss.detach().cpu().numpy().item(),
                 }
                 info.append(info_dict)
-
-        self.writer.close()
 
         return pd.DataFrame(info)
 
@@ -181,8 +139,9 @@ class BaseNeuralNet(nn.Module, ABC):
         grad = torch.autograd.grad(
             outputs=tensorToDerive,
             inputs=x,
-            grad_outputs=torch.ones_like(tensorToDerive),
+            grad_outputs=torch.ones_like(tensorToDerive, device=self.device),
             create_graph=True,
+            retain_graph=True,
         )[0]
 
         return grad
@@ -216,7 +175,7 @@ class BaseNeuralNet(nn.Module, ABC):
 class LinearNeuralNet(BaseNeuralNet):
     def __init__(self, layers):
         super(LinearNeuralNet, self).__init__(layers)
-        self.model = self._buildModel(layers)
+        self.model = self._buildModel(layers).to(self.device)
 
     def computeValueFunction(self, x):
         """
@@ -273,15 +232,16 @@ class LinearNeuralNet(BaseNeuralNet):
         Args:
             layer (torch.nn.Module): Linear layer to be initialized.
         """
-        torch.manual_seed(1)
-        if type(layer) == nn.Linear:
-            torch.nn.init.xavier_normal_(layer.weight)
+        if isinstance(layer, nn.Linear):
+            nn.init.xavier_normal_(layer.weight)
 
 
 class ConvexNeuralNet(BaseNeuralNet):
     def __init__(self, layers, activation, positivity, init):
         super(ConvexNeuralNet, self).__init__(layers)
-        self.model = self._buildModel(layers, activation, positivity, init)
+        self.model = self._buildModel(layers, activation, positivity, init).to(
+            self.device
+        )
 
     def computeValueFunction(self, x):
         """
@@ -383,17 +343,36 @@ class MatrixLinearNeuralNet(LinearNeuralNet):
             torch.Tensor: Computed value function.
         """
         dim = x.shape[1]
+        batch_size = x.shape[0]
 
-        stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
-        outputModel = self.model(x)
+        # Get the output from the model
+        outputModel = self.model(x)  # Shape: (batch_size, num_features)
 
-        inds = np.triu_indices(dim)
-        k = 0
-        for i, j in zip(inds[0], inds[1]):
-            stackedMatrices[:, i, j] = outputModel[:, k]
-            stackedMatrices[:, j, i] = outputModel[:, k]
-            k += 1
+        # Calculate the number of upper triangular elements including diagonal
+        num_tri_elems = (dim * (dim + 1)) // 2
 
+        # Ensure outputModel has the correct number of features
+        assert (
+            outputModel.shape[1] == num_tri_elems
+        ), f"Expected outputModel to have {num_tri_elems} features, got {outputModel.shape[1]}"
+
+        # Create indices for the upper triangular part
+        inds = torch.triu_indices(dim, dim)
+
+        # Initialize the stacked matrices
+        stackedMatrices = torch.zeros((batch_size, dim, dim), device=self.device)
+
+        # Assign the upper triangular elements
+        stackedMatrices[:, inds[0], inds[1]] = outputModel
+
+        # Mirror the upper triangle to the lower triangle
+        stackedMatrices_transpose = stackedMatrices.transpose(1, 2)
+        stackedMatrices = stackedMatrices + stackedMatrices_transpose
+        # Subtract the diagonal elements once because they were added twice
+        diagonal_indices = torch.arange(dim)
+        stackedMatrices[:, diagonal_indices, diagonal_indices] /= 2
+
+        # Compute the value function
         valueFunction = 0.5 * torch.einsum(
             "ni, nij, nj -> n", x, stackedMatrices, x
         ).reshape(-1, 1).to(self.device)
@@ -418,17 +397,36 @@ class MatrixConvexNeuralNet(ConvexNeuralNet):
             torch.Tensor: Computed value function.
         """
         dim = x.shape[1]
+        batch_size = x.shape[0]
 
-        stackedMatrices = torch.zeros((x.shape[0], dim, dim)).to(self.device)
-        outputModel = self.model(x)
+        # Get the output from the model
+        outputModel = self.model(x)  # Shape: (batch_size, num_features)
 
-        inds = np.triu_indices(dim)
-        k = 0
-        for i, j in zip(inds[0], inds[1]):
-            stackedMatrices[:, i, j] = outputModel[:, k]
-            stackedMatrices[:, j, i] = outputModel[:, k]
-            k += 1
+        # Calculate the number of upper triangular elements including diagonal
+        num_tri_elems = (dim * (dim + 1)) // 2
 
+        # Ensure outputModel has the correct number of features
+        assert (
+            outputModel.shape[1] == num_tri_elems
+        ), f"Expected outputModel to have {num_tri_elems} features, got {outputModel.shape[1]}"
+
+        # Create indices for the upper triangular part
+        inds = torch.triu_indices(dim, dim)
+
+        # Initialize the stacked matrices
+        stackedMatrices = torch.zeros((batch_size, dim, dim), device=self.device)
+
+        # Assign the upper triangular elements
+        stackedMatrices[:, inds[0], inds[1]] = outputModel
+
+        # Mirror the upper triangle to the lower triangle
+        stackedMatrices_transpose = stackedMatrices.transpose(1, 2)
+        stackedMatrices = stackedMatrices + stackedMatrices_transpose
+        # Subtract the diagonal elements once because they were added twice
+        diagonal_indices = torch.arange(dim)
+        stackedMatrices[:, diagonal_indices, diagonal_indices] /= 2
+
+        # Compute the value function
         valueFunction = 0.5 * torch.einsum(
             "ni, nij, nj -> n", x, stackedMatrices, x
         ).reshape(-1, 1).to(self.device)

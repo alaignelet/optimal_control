@@ -26,7 +26,7 @@ class HamiltonJacobiBellman(ABC):
         self.beta = beta
         self.gamma = gamma
         self.dataSampler = GenerateData(domain=self.domain)
-        self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
+        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
         self.correctShift = correctShift
 
     def train(self, interiorPointCount, dataPointCount, lrs, iterations, sampling):
@@ -51,12 +51,15 @@ class HamiltonJacobiBellman(ABC):
         elif sampling == "grid":
             xInt = self.dataSampler.sampleGrid(interiorPointCount).to(self.device)
 
+        xInt = xInt.clone().detach().requires_grad_(True)
+
         # Sample evaluation points for out of sample performance
         xEvaluation = self.getEvaluationPoints().to(self.device)
         self.yEvaluationTrue = self.groundTruthSolution(xEvaluation.detach())
 
         # Sample data points
         xData = self._getDataPoints(dataPointCount).to(self.device)
+        xData = xData.clone().detach().requires_grad_(True)
 
         # Compute the true values for the data points and their derivatives
         self.yTrue = self.dataValueFunction(xData.detach()).to(self.device)
@@ -248,55 +251,62 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
         self.Q = torch.eye(dim).to(self.device)
 
     def computeFxTerm(self, x, gradV):
-        """Computes the f(x) term in the HJB equation.
+        """
+        Computes the f(x) term in the HJB equation.
 
         Args:
-            x (torch.Tensor): The state variable.
-            gradV (torch.Tensor): The gradient of the value function.
+            x (torch.Tensor): Input tensor of shape (n, d).
+            gradV (torch.Tensor): Gradient of the value function with respect to x, shape (n, d).
 
         Returns:
-            torch.Tensor: The computed f(x) term.
-
+            torch.Tensor: Computed f(x) term, shape (n, 1).
         """
-        productFx = (
-            torch.einsum("ni, ij, nj -> n", gradV, self.A, x)
-            .reshape(-1, 1)
-            .to(self.device)
-        )
+        # Ensure tensors are on the correct device
+        x = x.to(self.device)
+        gradV = gradV.to(self.device)
+
+        # Compute gradV_A = gradV @ A
+        gradV_A = torch.matmul(gradV, self.A)  # Shape: (n, d)
+
+        # Compute element-wise product gradV_A * x, sum over features
+        gradV_A_x = (gradV_A * x).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        productFx = gradV_A_x
         return productFx
 
     def computeGxTerm(self, gradV):
-        """Computes the g(x) term in the HJB equation.
+        # Ensure gradV and self.B are on the correct device
+        gradV = gradV.to(self.device)
+        self.B = self.B.to(self.device)
 
-        Args:
-            gradV (torch.Tensor): The gradient of the value function.
+        # Alternative to torch.einsum
+        gradV_B = torch.matmul(gradV, self.B)  # (n, d)
+        gradV_B_gradV = (gradV_B * gradV).sum(dim=1, keepdim=True)  # (n, 1)
 
-        Returns:
-            torch.Tensor: The computed g(x) term.
-
-        """
-        productGx = (
-            -1.0
-            / (4 * self.beta)
-            * torch.einsum("ni, ij, nj -> n", gradV, self.B, gradV)
-            .reshape(-1, 1)
-            .to(self.device)
-        )
+        productGx = (-1.0 / (4 * self.beta)) * gradV_B_gradV
         return productGx
 
     def computeLxTerm(self, x):
-        """Computes the l(x) term in the HJB equation.
+        """
+        Computes the l(x) term in the HJB equation.
 
         Args:
-            x (torch.Tensor): The state variable.
+            x (torch.Tensor): Input tensor of shape (n, d).
 
         Returns:
-            torch.Tensor: The computed l(x) term.
-
+            torch.Tensor: Computed l(x) term, shape (n, 1).
         """
-        productLx = 0.5 * torch.einsum("ni, ij, nj -> n", x, self.Q, x).reshape(
-            -1, 1
-        ).to(self.device)
+        # Ensure tensors are on the correct device
+        x = x.to(self.device)
+        self.Q = self.Q.to(self.device)
+
+        # Compute x_Q = x @ Q
+        x_Q = torch.matmul(x, self.Q)  # Shape: (n, d)
+
+        # Compute element-wise product x_Q * x, sum over features
+        x_Q_x = (x_Q * x).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        productLx = 0.5 * x_Q_x
         return productLx
 
     def dataValueFunction(self, x):
@@ -437,35 +447,59 @@ class NonLinear(HamiltonJacobiBellman):
         self.eps = eps
         self.true_solution = self._loadTrueSolution()
 
+
     def computeFxTerm(self, x, gradV):
-        # we need to build a stacked matrix because A depends on x
-        stackedMatrices = torch.zeros((x.shape[0], x.shape[1], x.shape[1])).to(
+        stackedMatrices_01 = torch.ones_like(x[:, 0]).to(
             self.device
-        )
-        stackedMatrices[:, 0, 1] = 1
-        stackedMatrices[:, 1, 0] = self.eps * x[:, 0] ** 2
+        )  # This is just 1s for (0,1) positions
+        stackedMatrices_10 = (self.eps * x[:, 0] ** 2).to(
+            self.device
+        )  # The (1,0) positions depend on x
+
         productFx = (
-            torch.einsum("ni, nij, nj -> n", gradV, stackedMatrices, x)
+            (
+                gradV[:, 0] * stackedMatrices_01 * x[:, 1]
+                + gradV[:, 1] * stackedMatrices_10 * x[:, 0]
+            )
             .reshape(-1, 1)
             .to(self.device)
         )
+
         return productFx
 
     def computeGxTerm(self, gradV):
-        productGx = (
-            -1.0
-            / (4 * self.beta)
-            * torch.einsum("ni, ij, nj -> n", gradV, self.B, gradV)
-            .reshape(-1, 1)
-            .to(self.device)
-        )
+        gradV_B = torch.matmul(gradV, self.B)  # (n, d)
+        gradV_B_gradV = (gradV_B * gradV).sum(dim=1, keepdim=True)  # (n, 1)
+        
+        productGx = -1.0 / (4 * self.beta) * gradV_B_gradV.to(self.device)
+        
         return productGx
 
     def computeLxTerm(self, x):
-        productLx = 0.5 * torch.einsum("ni, ij, nj -> n", x, self.Q, x).reshape(
-            -1, 1
-        ).to(self.device)
+        """
+        Computes the l(x) term in the HJB equation without using einsum.
+
+        Args:
+            x (torch.Tensor): Input tensor of shape (n, d).
+
+        Returns:
+            torch.Tensor: Computed l(x) term, shape (n, 1).
+        """
+        # Ensure tensors are on the correct device
+        x = x.to(self.device)
+        self.Q = self.Q.to(self.device)
+
+        # Compute x_Q = x @ Q
+        x_Q = torch.matmul(x, self.Q)  # Shape: (n, d)
+
+        # Compute element-wise product x_Q * x, then sum over the last dimension
+        x_Q_x = (x_Q * x).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        # Multiply by 0.5 to get the final product
+        productLx = 0.5 * x_Q_x
+
         return productLx
+
 
     def dataMatrixFunction(self, x):
         stackedVectors = torch.zeros((x.shape[0], 3)).to(self.device)
@@ -561,7 +595,7 @@ class NonLinear2D(NonLinear):
             os.path.join(self.inputsFolder, "true_solution.csv")
         ).drop(columns="Unnamed: 0")
         trueSolution = (
-            torch.tensor(trueSolution.to_numpy()).reshape(-1, 1).to(self.device)
+            torch.tensor(trueSolution.to_numpy(), dtype=torch.float32).reshape(-1, 1).to(self.device)
         )
         return trueSolution
 
@@ -625,36 +659,70 @@ class CuckerSmale(HamiltonJacobiBellman):
         for i in range(self.dim):
             stackedMatrices[:, i, self.dim + i] = 1
 
-        productFx = (
-            torch.einsum("ni, nij, nj -> n", gradV, stackedMatrices, x)
-            .reshape(-1, 1)
-            .to(self.device)
-        )
+        # First, compute stackedMatrices @ x, which results in a tensor of shape (n, d)
+        stacked_x = torch.matmul(stackedMatrices, x.unsqueeze(2)).squeeze(2)  # Shape: (n, d)
+
+        # Now compute the dot product with gradV (element-wise multiplication followed by sum)
+        gradV_stacked_x = (gradV * stacked_x).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        # Move the result to the correct device
+        productFx = gradV_stacked_x.to(self.device)
         return productFx
 
     def computeGxTerm(self, gradV):
+        """
+        Computes the productGx term without using einsum.
+
+        Args:
+            gradV (torch.Tensor): Gradient of V, shape (n, d).
+            self.B (torch.Tensor): Matrix B, shape (d, d).
+
+        Returns:
+            torch.Tensor: Computed productGx term, shape (n, 1).
+        """
+        # Perform the matrix multiplication: gradV @ B
+        gradV_B = torch.matmul(gradV, self.B)  # Shape: (n, d)
+
+        # Compute the element-wise product gradV_B * gradV and sum over the last dimension
+        gradV_B_gradV = (gradV_B * gradV).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        # Compute the final result with the scaling factor
         productGx = (
-            -self.dim
-            * 1.0
-            / (4 * self.beta)
-            * torch.einsum("ni, ij, nj -> n", gradV, self.B, gradV)
-            .reshape(-1, 1)
-            .to(self.device)
-        )
+            -self.dim * 1.0 / (4 * self.beta) * gradV_B_gradV
+        ).to(self.device)
+
         return productGx
 
+
     def computeLxTerm(self, x):
-        productLx = 0.5 * torch.einsum("ni, ij, nj -> n", x, self.Q, x).reshape(
-            -1, 1
-        ).to(self.device)
+        """
+        Computes the productLx term without using einsum.
+
+        Args:
+            x (torch.Tensor): Input tensor, shape (n, d).
+            self.Q (torch.Tensor): Matrix Q, shape (d, d).
+
+        Returns:
+            torch.Tensor: Computed productLx term, shape (n, 1).
+        """
+        # Perform the matrix multiplication: x @ Q
+        x_Q = torch.matmul(x, self.Q)  # Shape: (n, d)
+
+        # Compute the element-wise product x_Q * x and sum over the last dimension
+        x_Q_x = (x_Q * x).sum(dim=1, keepdim=True)  # Shape: (n, 1)
+
+        # Multiply by 0.5 and move the result to the correct device
+        productLx = 0.5 * x_Q_x.to(self.device)
+
         return productLx
+
 
     def dataValueFunction(self, x):
         dataValueFunction = np.loadtxt(
             os.path.join(self.inputsFolder, "value_function.csv")
         )
         dataValueFunction = (
-            torch.tensor(dataValueFunction).reshape(-1, 1).to(self.device)
+            torch.tensor(dataValueFunction, dtype=torch.float32).reshape(-1, 1).to(self.device)
         )
         return dataValueFunction
 
@@ -663,7 +731,7 @@ class CuckerSmale(HamiltonJacobiBellman):
             os.path.join(self.inputsFolder, "value_function_derivative.csv")
         )
         dataValueFunctionDerivative = (
-            torch.tensor(dataValueFunctionDerivative)
+            torch.tensor(dataValueFunctionDerivative, dtype=torch.float32)
             .reshape(-1, 2 * self.dim)
             .to(self.device)
         )
