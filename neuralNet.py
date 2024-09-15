@@ -20,7 +20,7 @@ class BaseNeuralNet(nn.Module, ABC):
             layers (list): A list of integers representing the number of neurons in each layer.
         """
         super(BaseNeuralNet, self).__init__()
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     @abstractmethod
     def _buildLayers(self, layers):

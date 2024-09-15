@@ -26,7 +26,7 @@ class HamiltonJacobiBellman(ABC):
         self.beta = beta
         self.gamma = gamma
         self.dataSampler = GenerateData(domain=self.domain)
-        self.device = "mps" if torch.backends.mps.is_available() else "cpu"
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.correctShift = correctShift
 
     def train(self, interiorPointCount, dataPointCount, lrs, iterations, sampling):
