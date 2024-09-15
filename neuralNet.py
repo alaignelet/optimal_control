@@ -1,15 +1,15 @@
-import torch.nn as nn
-import torch
-import numpy as np
-import pandas as pd
-from abc import ABC, abstractmethod
-from icnn import ConvexLinear
-from enums import ActivationFunctionEnum, PositivityFunctionEnum, InitFunctionEnum
 import logging
+from abc import ABC, abstractmethod
+
+import pandas as pd
+import torch
+import torch.nn as nn
+import wandb
+
+from icnn import ConvexLinear
 
 # Set up logger
 logger = logging.getLogger("training")
-
 
 class BaseNeuralNet(nn.Module, ABC):
     @abstractmethod
@@ -104,6 +104,13 @@ class BaseNeuralNet(nn.Module, ABC):
                 retain_graph = True if epoch < iteration - 1 else False
                 loss.backward(retain_graph=retain_graph)
                 self.optimizer.step()
+
+                # Log metrics to wandb (wandb must be initialized from the notebook)
+                wandb.log({
+                    "epoch": epochTotal,
+                    "learning_rate": lr,
+                    "loss": loss.item(),
+                })
 
                 # Print training logs
                 if epochTotal % 1000 == 0:
