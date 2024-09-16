@@ -36,7 +36,7 @@ class BaseNeuralNet(nn.Module, ABC):
 
     def train(self, feedDict, lrs, iterations):
         """
-        Trains the neural network model.
+        Trains the neural network model and profiles GPU usage.
 
         Args:
             feedDict (dict): A dictionary containing the necessary input data for training.
@@ -45,9 +45,7 @@ class BaseNeuralNet(nn.Module, ABC):
 
         Returns:
             pandas.DataFrame: A DataFrame containing information about each epoch of training.
-
         """
-
         # Extract data from feedDict
         gamma = feedDict["gamma"]
         lossFunction = feedDict["lossFunction"]
@@ -98,26 +96,32 @@ class BaseNeuralNet(nn.Module, ABC):
                     + gamma["gradient"] * lossGrad
                     + gamma["residual"] * lossResidual
                 )
+
+                # Clear gradients
                 self.optimizer.zero_grad()
 
                 # Retain graph if needed
                 retain_graph = True if epoch < iteration - 1 else False
-                loss.backward(retain_graph=retain_graph)
-                self.optimizer.step()
 
-                # Log metrics to wandb (wandb must be initialized from the notebook)
-                wandb.log({
-                    "epoch": epochTotal,
-                    "learning_rate": lr,
-                    "loss": loss.item(),
-                })
+                # Backpropagation
+                loss.backward(retain_graph=retain_graph)
+
+                # Optimizer step
+                self.optimizer.step()
 
                 # Print training logs
                 if epochTotal % 1000 == 0:
+
+                    loss_value = loss.detach().item()  # Minimal data transfer
+                    wandb.log({
+                        "epoch": epochTotal,
+                        "learning_rate": lr,
+                        "loss": loss_value,
+                    })
+
                     logger.info(
                         f"{epochTotal} / {sum(iterations)} ({epoch} / {iteration}), "
-                        f"lr:{lr:.1e}, loss:{loss.item():.2e} (data: {lossData.item():.2e}, "
-                        f"grad: {lossGrad.item():.2e}, res: {lossResidual.item():.2e})"
+                        f"lr:{lr:.1e}, loss:{loss_value:.2e}"
                     )
 
                 epochTotal += 1

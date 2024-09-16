@@ -96,9 +96,14 @@ class HamiltonJacobiBellman(ABC):
                 - lossGradient (torch.Tensor): Loss value for gradient.
                 - residualInt (torch.Tensor): Residual value for the Hamilton-Jacobi equation.
         """
-        residualInt = torch.tensor([0]).float().to(self.device)
-        lossData = torch.tensor([0]).float().to(self.device)
-        lossGradient = torch.tensor([0]).float().to(self.device)
+        # residualInt = torch.tensor([0]).float().to(self.device)
+        # lossData = torch.tensor([0]).float().to(self.device)
+        # lossGradient = torch.tensor([0]).float().to(self.device)
+
+        residualInt = torch.zeros(1, dtype=torch.float32, device=self.device)
+        lossData = torch.zeros(1, dtype=torch.float32, device=self.device)
+        lossGradient = torch.zeros(1, dtype=torch.float32, device=self.device)
+
 
         # Compute the residual on the interior points
         if self.gamma["residual"] > 0.0:
@@ -139,7 +144,6 @@ class HamiltonJacobiBellman(ABC):
 
         meanSquaredError = (
             torch.mean((yEvaluation.double() - self.yEvaluationTrue.double()) ** 2)
-            .float()
             .to(self.device)
         )
         return meanSquaredError
@@ -319,8 +323,9 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
             torch.Tensor: The computed value function.
 
         """
-        alpha1 = 1.0 / 5 * (1 + np.sqrt(6))
-        P = alpha1 * torch.eye(n=self.dim).to(self.device)
+        alpha1 = torch.tensor(1.0 / 5 * (1 + np.sqrt(6)), device=self.device, dtype=torch.float32)
+        P = alpha1 * torch.eye(n=self.dim, device=self.device)
+
         productValueFunction = 0.5 * torch.einsum("ni, ij, nj -> n", x, P, x).reshape(
             -1, 1
         ).to(self.device)
@@ -336,8 +341,9 @@ class LinearQuadraticRegulator(HamiltonJacobiBellman):
             torch.Tensor: The computed derivative of the value function.
 
         """
-        alpha1 = 1.0 / 5 * (1 + np.sqrt(6))
-        P = alpha1 * torch.eye(n=self.dim).to(self.device)
+        alpha1 = torch.tensor(1.0 / 5 * (1 + np.sqrt(6)), device=self.device, dtype=torch.float32)
+        P = alpha1 * torch.eye(n=self.dim, device=self.device)
+
         productValueFunctionDerivative = torch.einsum("ij, nj -> ni", P, x).to(
             self.device
         )
@@ -444,28 +450,26 @@ class NonLinear(HamiltonJacobiBellman):
         )
         self.B = torch.tensor([[0, 0], [0, 1]]).float().to(self.device)
         self.Q = torch.eye(dim).to(self.device)
-        self.eps = eps
+        self.eps = torch.tensor(eps, device=self.device, dtype=torch.float32)
         self.true_solution = self._loadTrueSolution()
 
 
     def computeFxTerm(self, x, gradV):
-        stackedMatrices_01 = torch.ones_like(x[:, 0]).to(
-            self.device
-        )  # This is just 1s for (0,1) positions
-        stackedMatrices_10 = (self.eps * x[:, 0] ** 2).to(
-            self.device
-        )  # The (1,0) positions depend on x
+        # stackedMatrices_01 = torch.ones_like(x[:, 0]).to(
+        #     self.device
+        # )  # This is just 1s for (0,1) positions
+        # stackedMatrices_10 = (self.eps * x[:, 0] ** 2).to(
+        #     self.device
+        # )  # The (1,0) positions depend on x
 
-        productFx = (
-            (
-                gradV[:, 0] * stackedMatrices_01 * x[:, 1]
-                + gradV[:, 1] * stackedMatrices_10 * x[:, 0]
-            )
-            .reshape(-1, 1)
-            .to(self.device)
-        )
-
-        return productFx
+        stackedMatrices_01 = torch.ones_like(x[:, 0], device=self.device)
+        stackedMatrices_10 = self.eps * x[:, 0] ** 2
+        
+        # All tensors involved should already be on self.device
+        return (
+            gradV[:, 0] * stackedMatrices_01 * x[:, 1]
+            + gradV[:, 1] * stackedMatrices_10 * x[:, 0]
+        ).reshape(-1, 1)
 
     def computeGxTerm(self, gradV):
         gradV_B = torch.matmul(gradV, self.B)  # (n, d)
