@@ -1,4 +1,15 @@
 .DS_Store
+
+# Python bytecode
+__pycache__/
+
+# IDE / tooling
+.idea/
+
+# Experiment tracking and stray boilerplate
+wandb/
+main.py
+
 __pycache__/pde.cpython-39.pyc
 Cholesky/4.png
 Cholesky/abs.png

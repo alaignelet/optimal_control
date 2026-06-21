@@ -598,8 +598,12 @@ class NonLinear2D(NonLinear):
         trueSolution = pd.read_csv(
             os.path.join(self.inputsFolder, "true_solution.csv")
         ).drop(columns="Unnamed: 0")
+        # Transpose: the CSV stores rows=x0/cols=x1, but getEvaluationPoints'
+        # meshgrid flattening has x1 varying slowly. Verified against the
+        # analytic SDRE formula (dataValueFunction): MSE 7.6e-3 transposed
+        # vs 1.1e-1 as-is.
         trueSolution = (
-            torch.tensor(trueSolution.to_numpy(), dtype=torch.float32).reshape(-1, 1).to(self.device)
+            torch.tensor(trueSolution.to_numpy().T, dtype=torch.float32).reshape(-1, 1).to(self.device)
         )
         return trueSolution
 
