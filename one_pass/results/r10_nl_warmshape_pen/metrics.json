@@ -1,0 +1,46 @@
+{
+  "tag": "r10_nl_warmshape_pen",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001,
+      1e-05
+    ],
+    "iterations": [
+      4000,
+      8000,
+      8000,
+      8000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 10.0,
+    "margin": 0.01,
+    "equilibrium_anchor": 10.0,
+    "resample": true,
+    "aug_lagrangian": 0.0,
+    "al_update_every": 100,
+    "warm_shape": 2000,
+    "seed": 0,
+    "tag": "r10_nl_warmshape_pen",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.03453170880675316,
+  "eval_mse": 1.2518521458088976,
+  "hessian_global_min_eigenvalue": 0.009959079325199127,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

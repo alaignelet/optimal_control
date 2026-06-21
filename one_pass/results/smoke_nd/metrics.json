@@ -1,0 +1,30 @@
+{
+  "tag": "smoke_nd",
+  "config": {
+    "dim": 10,
+    "hidden": 64,
+    "depth": 3,
+    "eps": 1.0,
+    "interior_points": 100,
+    "dirs_per_point": 4,
+    "penalty": 10.0,
+    "margin": 0.1,
+    "anchor": 10.0,
+    "eps_continuation": 30,
+    "lrs": [
+      0.01,
+      0.001
+    ],
+    "iterations": [
+      30,
+      30
+    ],
+    "seed": 0,
+    "tag": "smoke_nd"
+  },
+  "final_residual": 0.9733498096466064,
+  "eval_mse": 0.3931326620345412,
+  "hessian_min_eig": 0.0270148403942585,
+  "hessian_violation_fraction": 0.0,
+  "n_hessian_points": 300
+}

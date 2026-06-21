@@ -1,0 +1,37 @@
+{
+  "tag": "full_softplus_exp",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "softplus",
+    "positivity": "convex",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "seed": 0,
+    "tag": "full_softplus_exp",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 571.5283813476562,
+  "eval_mse": 0.9686362192544069,
+  "hessian_global_min_eigenvalue": 1.0488954782485962,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

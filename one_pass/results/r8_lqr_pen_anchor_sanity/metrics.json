@@ -1,0 +1,40 @@
+{
+  "tag": "r8_lqr_pen_anchor_sanity",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 1.0,
+    "margin": 0.1,
+    "equilibrium_anchor": 10.0,
+    "seed": 0,
+    "tag": "r8_lqr_pen_anchor_sanity",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 2.813604567108996e-07,
+  "eval_mse": 2.120618839152567e-08,
+  "hessian_global_min_eigenvalue": 0.6323460936546326,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

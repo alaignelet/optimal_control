@@ -1,0 +1,39 @@
+{
+  "tag": "r7_nl_hybrid_anchor",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.1,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 10.0,
+    "margin": 0.01,
+    "seed": 0,
+    "tag": "r7_nl_hybrid_anchor",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.08005686104297638,
+  "eval_mse": 0.6189801314582459,
+  "hessian_global_min_eigenvalue": -0.31373804807662964,
+  "hessian_violation_fraction": 0.035,
+  "hessian_n_grid_points": 400
+}

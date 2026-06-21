@@ -1,0 +1,50 @@
+{
+  "tag": "lseq_nl",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "lseq",
+    "lseq_K": 8,
+    "lseq_m": 0.01,
+    "lseq_tau": 1.0,
+    "activation": "relu",
+    "positivity": "icnn",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001,
+      1e-05
+    ],
+    "iterations": [
+      4000,
+      8000,
+      8000,
+      8000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.0,
+    "equilibrium_anchor": 10.0,
+    "resample": true,
+    "aug_lagrangian": 0.0,
+    "al_update_every": 100,
+    "warm_shape": 0,
+    "eps_continuation": 12000,
+    "seed": 0,
+    "tag": "lseq_nl",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.0012784068239852786,
+  "eval_mse": 0.00133081073179508,
+  "hessian_global_min_eigenvalue": 0.49471524357795715,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

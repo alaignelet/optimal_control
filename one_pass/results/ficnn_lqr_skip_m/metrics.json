@@ -1,0 +1,51 @@
+{
+  "tag": "ficnn_lqr_skip_m",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "ficnn",
+    "ficnn_m": 0.05,
+    "ficnn_skip": true,
+    "ficnn_positivity": "softplus",
+    "lseq_K": 8,
+    "lseq_m": 0.1,
+    "lseq_tau": 1.0,
+    "activation": "relu",
+    "positivity": "icnn",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.0,
+    "equilibrium_anchor": 10.0,
+    "resample": false,
+    "aug_lagrangian": 0.0,
+    "al_update_every": 100,
+    "warm_shape": 0,
+    "eps_continuation": 0,
+    "seed": 0,
+    "tag": "ficnn_lqr_skip_m",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 8.950950132202706e-07,
+  "eval_mse": 1.800307385317338e-07,
+  "hessian_global_min_eigenvalue": 0.6614455580711365,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

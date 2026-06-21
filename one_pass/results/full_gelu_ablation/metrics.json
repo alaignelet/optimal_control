@@ -1,0 +1,37 @@
+{
+  "tag": "full_gelu_ablation",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "icnn",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "seed": 0,
+    "tag": "full_gelu_ablation",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 4.714298640351444e-08,
+  "eval_mse": 0.04626360098469317,
+  "hessian_global_min_eigenvalue": -0.29194268584251404,
+  "hessian_violation_fraction": 1.0,
+  "hessian_n_grid_points": 400
+}

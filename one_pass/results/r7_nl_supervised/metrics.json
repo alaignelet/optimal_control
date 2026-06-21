@@ -1,0 +1,39 @@
+{
+  "tag": "r7_nl_supervised",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 1.0,
+    "gamma_gradient": 1.0,
+    "gamma_residual": 0.0,
+    "interior_points": 500,
+    "data_points": 200,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.0,
+    "seed": 0,
+    "tag": "r7_nl_supervised",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.0011145273456349969,
+  "eval_mse": 0.10182811567003876,
+  "hessian_global_min_eigenvalue": -0.5283167362213135,
+  "hessian_violation_fraction": 0.045,
+  "hessian_n_grid_points": 400
+}

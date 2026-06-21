@@ -1,0 +1,39 @@
+{
+  "tag": "r5_lqr_pen1_margin_s2",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 1.0,
+    "margin": 0.1,
+    "seed": 2,
+    "tag": "r5_lqr_pen1_margin_s2",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 1.7530895490835974e-07,
+  "eval_mse": 7.684358902807936e-08,
+  "hessian_global_min_eigenvalue": 0.5277573466300964,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

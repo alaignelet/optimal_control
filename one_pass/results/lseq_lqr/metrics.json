@@ -1,0 +1,48 @@
+{
+  "tag": "lseq_lqr",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "lseq",
+    "lseq_K": 8,
+    "lseq_m": 0.1,
+    "lseq_tau": 1.0,
+    "activation": "relu",
+    "positivity": "icnn",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.0,
+    "equilibrium_anchor": 10.0,
+    "resample": false,
+    "aug_lagrangian": 0.0,
+    "al_update_every": 100,
+    "warm_shape": 0,
+    "eps_continuation": 0,
+    "seed": 0,
+    "tag": "lseq_lqr",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 4.2274493239347066e-08,
+  "eval_mse": 3.5664724581961736e-09,
+  "hessian_global_min_eigenvalue": 0.6866981983184814,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

@@ -1,0 +1,37 @@
+{
+  "tag": "r2_elu_clip_cvxinit",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "elu",
+    "positivity": "icnn",
+    "init": "convex",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "seed": 0,
+    "tag": "r2_elu_clip_cvxinit",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.006659333128482103,
+  "eval_mse": 0.09088757347182275,
+  "hessian_global_min_eigenvalue": 0.00018553358677309006,
+  "hessian_violation_fraction": 0.0,
+  "hessian_n_grid_points": 400
+}

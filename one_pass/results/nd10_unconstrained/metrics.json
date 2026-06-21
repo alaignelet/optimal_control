@@ -1,0 +1,34 @@
+{
+  "tag": "nd10_unconstrained",
+  "config": {
+    "dim": 10,
+    "hidden": 64,
+    "depth": 3,
+    "eps": 1.0,
+    "interior_points": 1000,
+    "dirs_per_point": 4,
+    "penalty": 0.0,
+    "margin": 0.0,
+    "anchor": 0.0,
+    "eps_continuation": 0,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001,
+      1e-05
+    ],
+    "iterations": [
+      4000,
+      8000,
+      8000,
+      8000
+    ],
+    "seed": 0,
+    "tag": "nd10_unconstrained"
+  },
+  "final_residual": 6.9609491220035125e-06,
+  "eval_mse": 1.5293465142262166,
+  "hessian_min_eig": -1.0281481742858887,
+  "hessian_violation_fraction": 1.0,
+  "n_hessian_points": 300
+}

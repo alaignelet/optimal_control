@@ -1,0 +1,44 @@
+{
+  "tag": "smoke_r10",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      30,
+      30,
+      30
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.01,
+    "equilibrium_anchor": 10.0,
+    "resample": true,
+    "aug_lagrangian": 10.0,
+    "al_update_every": 100,
+    "warm_shape": 100,
+    "seed": 0,
+    "tag": "smoke_r10",
+    "wandb": false,
+    "hessian_grid": 6
+  },
+  "final_loss": 0.051296066492795944,
+  "eval_mse": 1.3457141035796154,
+  "hessian_global_min_eigenvalue": -0.07122354209423065,
+  "hessian_violation_fraction": 0.6388888888888888,
+  "hessian_n_grid_points": 36
+}

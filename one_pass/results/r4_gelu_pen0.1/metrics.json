@@ -1,0 +1,39 @@
+{
+  "tag": "r4_gelu_pen0.1",
+  "config": {
+    "problem": "lqr2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001
+    ],
+    "iterations": [
+      2000,
+      4000,
+      4000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.1,
+    "margin": 0.0,
+    "seed": 0,
+    "tag": "r4_gelu_pen0.1",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 0.028308304026722908,
+  "eval_mse": 0.04584260929774824,
+  "hessian_global_min_eigenvalue": -0.27660971879959106,
+  "hessian_violation_fraction": 1.0,
+  "hessian_n_grid_points": 400
+}

@@ -1,0 +1,43 @@
+{
+  "tag": "r9_nl_resample_unconstrained",
+  "config": {
+    "problem": "nonlinear2d",
+    "arch": "convex",
+    "activation": "gelu",
+    "positivity": "fc",
+    "init": "traditional",
+    "hidden": 32,
+    "depth": 3,
+    "gamma_data": 0.0,
+    "gamma_gradient": 0.0,
+    "gamma_residual": 1.0,
+    "interior_points": 500,
+    "data_points": 50,
+    "lrs": [
+      0.01,
+      0.001,
+      0.0001,
+      1e-05
+    ],
+    "iterations": [
+      4000,
+      8000,
+      8000,
+      8000
+    ],
+    "sampling": "random",
+    "convexity_penalty": 0.0,
+    "margin": 0.0,
+    "equilibrium_anchor": 0.0,
+    "resample": true,
+    "seed": 0,
+    "tag": "r9_nl_resample_unconstrained",
+    "wandb": false,
+    "hessian_grid": 20
+  },
+  "final_loss": 2.333148404431995e-05,
+  "eval_mse": 1.2038542769770133,
+  "hessian_global_min_eigenvalue": -27.91141700744629,
+  "hessian_violation_fraction": 0.8375,
+  "hessian_n_grid_points": 400
+}

@@ -1,0 +1,5 @@
+# Python bytecode
+__pycache__/
+
+# Model checkpoints (regenerable; kept out of git history)
+*.pt
